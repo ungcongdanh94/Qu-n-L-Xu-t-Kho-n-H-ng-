@@ -191,7 +191,7 @@
         ${data.order.note ? `<div class="note-box">📝 <b>Ghi chú:</b> ${data.order.note}</div>` : ''}
         <p class="hint">${warehousesBreakdown}</p>
         <div class="photo-gallery">${photosHtml}</div>
-        ${user.role === 'leader' || hasUserPermission(user, 'delete_any_order') ? '<button class="btn danger" onclick="deleteCurrentOrder()">🗑️ Xoá đơn hàng này</button>' : ''}
+        ${hasUserRole(user, 'leader') || hasUserPermission(user, 'delete_any_order') ? '<button class="btn danger" onclick="deleteCurrentOrder()">🗑️ Xoá đơn hàng này</button>' : ''}
         <div id="deleteMsg"></div>
       `;
       document.getElementById('modalOverlay').style.display = 'flex';

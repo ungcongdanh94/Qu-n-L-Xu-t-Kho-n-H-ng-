@@ -15,8 +15,8 @@
   <script>
     const user = requireLogin();
     if (user) {
-      if (user.role === 'sales') window.location.href = '/sales.html';
-      else if (user.role === 'warehouse') window.location.href = '/warehouse.html';
+      if (hasUserRole(user, 'sales')) window.location.href = '/sales.html';
+      else if (hasUserRole(user, 'warehouse')) window.location.href = '/warehouse.html';
       else window.location.href = '/dashboard.html';
     }
   </script>

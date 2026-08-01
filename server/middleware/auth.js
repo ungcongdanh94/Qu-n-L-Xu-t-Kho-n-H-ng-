@@ -26,9 +26,15 @@ function requireAuth(req, res, next) {
   }
 }
 
+function getUserRoles(user) {
+  if (user && Array.isArray(user.roles) && user.roles.length > 0) return user.roles;
+  return user && user.role ? [user.role] : [];
+}
+
 function requireRole(...roles) {
   return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role)) {
+    const userRoles = getUserRoles(req.user);
+    if (!req.user || !userRoles.some((r) => roles.includes(r))) {
       return res.status(403).json({ error: 'Ban khong co quyen thuc hien thao tac nay.' });
     }
     next();
@@ -53,10 +59,19 @@ function hasPermission(userId, permission) {
 function requireRoleOrPermission(permission, ...roles) {
   return (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'Chua dang nhap.' });
-    if (roles.includes(req.user.role)) return next();
+    const userRoles = getUserRoles(req.user);
+    if (userRoles.some((r) => roles.includes(r))) return next();
     if (hasPermission(req.user.id, permission)) return next();
     return res.status(403).json({ error: 'Ban khong co quyen thuc hien thao tac nay.' });
   };
 }
 
-module.exports = { requireAuth, requireRole, requireRoleOrPermission, hasPermission, PERMISSIONS, JWT_SECRET };
+module.exports = {
+  requireAuth,
+  requireRole,
+  requireRoleOrPermission,
+  hasPermission,
+  getUserRoles,
+  PERMISSIONS,
+  JWT_SECRET,
+};

@@ -27,10 +27,18 @@ router.post('/login', (req, res) => {
   } catch (err) {
     permissions = [];
   }
+  let roles = [];
+  try {
+    roles = JSON.parse(user.roles || '[]');
+  } catch (err) {
+    roles = [];
+  }
+  if (!Array.isArray(roles) || roles.length === 0) roles = [user.role];
   const payload = {
     id: user.id,
     username: user.username,
-    role: user.role,
+    role: user.role, // giu lai de tuong thich, vai tro dau tien/chinh trong danh sach roles
+    roles,
     full_name: user.full_name,
     warehouse_id: user.warehouse_id || null,
     warehouse_name: warehouse ? warehouse.name : null,

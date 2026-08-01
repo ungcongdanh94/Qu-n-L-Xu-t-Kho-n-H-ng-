@@ -72,6 +72,12 @@ function hasUserPermission(user, permission) {
   return !!(user && Array.isArray(user.permissions) && user.permissions.includes(permission));
 }
 
+function hasUserRole(user, role) {
+  if (!user) return false;
+  if (Array.isArray(user.roles) && user.roles.length > 0) return user.roles.includes(role);
+  return user.role === role;
+}
+
 function requireLogin(allowedRoles, requiredPermission) {
   const token = getToken();
   const user = getUser();
@@ -79,7 +85,7 @@ function requireLogin(allowedRoles, requiredPermission) {
     window.location.href = '/login.html';
     return null;
   }
-  const roleOk = !allowedRoles || allowedRoles.includes(user.role);
+  const roleOk = !allowedRoles || allowedRoles.some((r) => hasUserRole(user, r));
   const permOk = requiredPermission && hasUserPermission(user, requiredPermission);
   if (!roleOk && !permOk) {
     alert('Ban khong co quyen truy cap trang nay.');
@@ -237,8 +243,8 @@ function connectRealtime() {
   __sseConnection.addEventListener('new_order', (e) => {
     const data = JSON.parse(e.data);
     const isRelevantWarehouse =
-      user.role === 'leader' ||
-      (user.role === 'warehouse' && data.warehouse_ids && data.warehouse_ids.includes(user.warehouse_id));
+      hasUserRole(user, 'leader') ||
+      (hasUserRole(user, 'warehouse') && data.warehouse_ids && data.warehouse_ids.includes(user.warehouse_id));
     if (isRelevantWarehouse) {
       const khoNames = (data.warehouses || []).map((w) => w.warehouse_name).join(', ');
       showToast(`🔔 Đơn hàng mới: ${data.customer_name}${khoNames ? ' — ' + khoNames : ''}`);
@@ -248,7 +254,7 @@ function connectRealtime() {
 
   __sseConnection.addEventListener('order_updated', (e) => {
     const data = JSON.parse(e.data);
-    if (user.role === 'sales' && data.sales_user_id === user.id && data.updated_by !== user.username) {
+    if (hasUserRole(user, 'sales') && data.sales_user_id === user.id && data.updated_by !== user.username) {
       showToast(`📦 Đơn "${data.customer_name}" vừa được cập nhật: ${statusLabel(data.warehouse_status)}`);
     }
     if (typeof window.refreshList === 'function') window.refreshList();
@@ -260,7 +266,7 @@ function connectRealtime() {
 
   __sseConnection.addEventListener('new_return', (e) => {
     const data = JSON.parse(e.data);
-    const isRelevant = user.role === 'leader' || (user.role === 'warehouse' && data.warehouse_id === user.warehouse_id);
+    const isRelevant = hasUserRole(user, 'leader') || (hasUserRole(user, 'warehouse') && data.warehouse_id === user.warehouse_id);
     if (isRelevant) {
       showToast(`↩️ Có phiếu trả hàng mới: ${data.customer_name}`);
     }
@@ -477,20 +483,20 @@ function renderNavTabs(active) {
   const user = getUser();
   if (!user) return '';
   const tabs = [];
-  if (user.role === 'sales' || user.role === 'leader') {
+  if (hasUserRole(user, 'sales') || hasUserRole(user, 'leader')) {
     tabs.push({ href: '/sales.html', label: 'Đăng đơn', icon: '📤', key: 'sales' });
   }
-  if (user.role === 'sales') {
+  if (hasUserRole(user, 'sales')) {
     tabs.push({ href: '/myorders.html', label: 'Đơn hàng', icon: '📑', key: 'myorders' });
   }
-  if (user.role === 'warehouse' || user.role === 'leader') {
+  if (hasUserRole(user, 'warehouse') || hasUserRole(user, 'leader')) {
     tabs.push({ href: '/warehouse.html', label: 'Xử lý kho', icon: '📦', key: 'warehouse' });
   }
   tabs.push({ href: '/returns.html', label: 'Hàng trả', icon: '↩️', key: 'returns' });
-  if (user.role === 'leader' || hasUserPermission(user, 'view_all')) {
+  if (hasUserRole(user, 'leader') || hasUserPermission(user, 'view_all')) {
     tabs.push({ href: '/dashboard.html', label: 'Tổng quan', icon: '📊', key: 'dashboard' });
   }
-  if (user.role === 'leader' || hasUserPermission(user, 'manage_admin')) {
+  if (hasUserRole(user, 'leader') || hasUserPermission(user, 'manage_admin')) {
     tabs.push({ href: '/users.html', label: 'Tài khoản', icon: '👥', key: 'users' });
   }
   return `

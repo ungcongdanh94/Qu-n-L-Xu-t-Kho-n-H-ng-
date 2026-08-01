@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   full_name TEXT NOT NULL,
   role TEXT NOT NULL CHECK(role IN ('sales','warehouse','leader')),
+  roles TEXT NOT NULL DEFAULT '[]',
   warehouse_id INTEGER,
   is_active INTEGER NOT NULL DEFAULT 1,
   permissions TEXT NOT NULL DEFAULT '[]',
@@ -142,6 +143,15 @@ if (!columnExists('orders', 'order_type')) {
 if (!columnExists('orders', 'order_code')) {
   db.exec('ALTER TABLE orders ADD COLUMN order_code TEXT');
 }
+if (!columnExists('users', 'roles')) {
+  db.exec("ALTER TABLE users ADD COLUMN roles TEXT NOT NULL DEFAULT '[]'");
+}
+// Chuyen du lieu vai tro CU (1 vai tro duy nhat) sang dang danh sach nhieu vai tro,
+// de tuong thich voi tai khoan da tao truoc khi co tinh nang nay.
+db.exec(`
+  UPDATE users SET roles = '["' || role || '"]'
+  WHERE roles = '[]' OR roles IS NULL
+`);
 if (!columnExists('users', 'permissions')) {
   db.exec("ALTER TABLE users ADD COLUMN permissions TEXT NOT NULL DEFAULT '[]'");
 }

@@ -82,10 +82,10 @@
 
     // Chi thu kho / quan ly moi duoc dinh kem hinh ngay luc lap phieu
     // (truong hop khach tra hang truc tiep tai kho, kho lap phieu va chup hinh luon)
-    const canAttachPhotoOnCreate = user.role === 'warehouse' || user.role === 'leader';
+    const canAttachPhotoOnCreate = hasUserRole(user, 'warehouse') || hasUserRole(user, 'leader');
     document.getElementById('photoSection').style.display = canAttachPhotoOnCreate ? '' : 'none';
     document.getElementById('roleHint').textContent =
-      user.role === 'sales'
+      hasUserRole(user, 'sales')
         ? 'Dùng khi khách báo trước sẽ trả hàng: điền thông tin bên dưới, thủ kho sẽ chụp hình xác nhận khi nhận được hàng trả.'
         : 'Nếu khách trả hàng trực tiếp tại kho: chụp hình xác nhận ngay bên dưới, sales sẽ xác nhận đã tiếp nhận thông tin. Nếu chỉ mới nhận thông báo (chưa có hàng), có thể để trống hình, sales sẽ theo dõi và kho chụp hình khi hàng về sau.';
 
@@ -103,7 +103,7 @@
       const data = await apiFetch('/api/warehouses');
       const opts = data.warehouses.map((w) => `<option value="${w.id}">${w.name}</option>`).join('');
       document.getElementById('warehouseSelect').innerHTML = '<option value="">-- Chọn kho --</option>' + opts;
-      if (user.role === 'leader') {
+      if (hasUserRole(user, 'leader')) {
         const filterEl = document.getElementById('warehouseFilter');
         filterEl.style.display = '';
         filterEl.innerHTML = '<option value="">Tất cả các kho</option>' + opts;
@@ -194,7 +194,7 @@
       document.getElementById('modalTitle').textContent = currentReturn.customer_name;
 
       let actionHtml = '';
-      if (currentReturn.status === 'cho_kho_xac_nhan' && (user.role === 'warehouse' || user.role === 'leader')) {
+      if (currentReturn.status === 'cho_kho_xac_nhan' && (hasUserRole(user, 'warehouse') || hasUserRole(user, 'leader'))) {
         actionHtml = `
           <label>Chụp hình xác nhận đã nhận hàng trả</label>
           <div style="display:flex; gap:8px; margin-top:6px;">
@@ -204,7 +204,7 @@
           <input type="file" accept="image/*" capture="environment" id="confirmPhotoCamera" style="display:none" onchange="confirmWithPhoto(this)" />
           <input type="file" accept="image/*" id="confirmPhotoGallery" style="display:none" onchange="confirmWithPhoto(this)" />
         `;
-      } else if (currentReturn.status === 'cho_sales_xac_nhan' && (user.role === 'sales' || user.role === 'leader')) {
+      } else if (currentReturn.status === 'cho_sales_xac_nhan' && (hasUserRole(user, 'sales') || hasUserRole(user, 'leader'))) {
         actionHtml = `<button class="btn" onclick="confirmBySales()">✅ Xác nhận đã tiếp nhận thông tin</button>`;
       }
 

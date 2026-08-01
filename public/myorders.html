@@ -161,7 +161,7 @@
         .join('');
 
       const canDelete =
-        (user.role === 'sales' && data.order.sales_username === user.username && data.order.status === 'cho_soan') ||
+        (hasUserRole(user, 'sales') && data.order.sales_username === user.username && data.order.status === 'cho_soan') ||
         hasUserPermission(user, 'delete_any_order');
 
       document.getElementById('modalContent').innerHTML = `

@@ -52,14 +52,23 @@
       <label>Mật khẩu ban đầu</label>
       <input type="text" id="password" placeholder="Ít nhất 4 ký tự, nhân viên có thể đổi sau" />
 
-      <label>Vai trò</label>
-      <select id="role" onchange="onRoleChange()">
-        <option value="sales">Sales (đăng đơn hàng)</option>
-        <option value="warehouse">Thủ kho</option>
-        <option value="leader">Quản lý</option>
-      </select>
+      <label>Vai trò (có thể chọn nhiều, ví dụ vừa Sales vừa Thủ kho)</label>
+      <div style="display:flex; flex-direction:column; gap:8px; margin-top:6px;">
+        <label style="display:flex; align-items:center; gap:8px; font-size:15px; color:var(--text); margin:0;">
+          <input type="checkbox" class="role-checkbox" value="sales" onchange="onRoleChange()" style="width:20px; height:20px;" />
+          Sales (đăng đơn hàng)
+        </label>
+        <label style="display:flex; align-items:center; gap:8px; font-size:15px; color:var(--text); margin:0;">
+          <input type="checkbox" class="role-checkbox" value="warehouse" onchange="onRoleChange()" style="width:20px; height:20px;" />
+          Thủ kho
+        </label>
+        <label style="display:flex; align-items:center; gap:8px; font-size:15px; color:var(--text); margin:0;">
+          <input type="checkbox" class="role-checkbox" value="leader" onchange="onRoleChange()" style="width:20px; height:20px;" />
+          Quản lý
+        </label>
+      </div>
 
-      <label id="warehouseLabel" style="display:none;">Kho phụ trách</label>
+      <label id="warehouseLabel" style="display:none;">Kho phụ trách (do có vai trò Thủ kho)</label>
       <select id="warehouseSelect" style="display:none;"></select>
 
       <button class="btn" id="createBtn" onclick="createUser()">Tạo tài khoản</button>
@@ -217,9 +226,14 @@
       }
     }
 
+    function getSelectedRoles(scope) {
+      const selector = scope === 'edit' ? '.edit-role-checkbox' : '.role-checkbox';
+      return Array.from(document.querySelectorAll(selector + ':checked')).map((el) => el.value);
+    }
+
     function onRoleChange() {
-      const role = document.getElementById('role').value;
-      const show = role === 'warehouse';
+      const roles = getSelectedRoles('create');
+      const show = roles.includes('warehouse');
       document.getElementById('warehouseLabel').style.display = show ? '' : 'none';
       document.getElementById('warehouseSelect').style.display = show ? '' : 'none';
     }
@@ -228,8 +242,8 @@
       const full_name = document.getElementById('fullName').value.trim();
       const username = document.getElementById('username').value.trim();
       const password = document.getElementById('password').value;
-      const role = document.getElementById('role').value;
-      const warehouse_id = role === 'warehouse' ? document.getElementById('warehouseSelect').value : null;
+      const roles = getSelectedRoles('create');
+      const warehouse_id = roles.includes('warehouse') ? document.getElementById('warehouseSelect').value : null;
       const msg = document.getElementById('createMsg');
       msg.textContent = '';
       msg.className = '';
@@ -239,22 +253,29 @@
         msg.textContent = 'Vui lòng nhập đầy đủ thông tin.';
         return;
       }
-      if (role === 'warehouse' && !warehouse_id) {
+      if (roles.length === 0) {
         msg.className = 'error-msg';
-        msg.textContent = 'Vui lòng chọn kho phụ trách cho thủ kho này.';
+        msg.textContent = 'Vui lòng chọn ít nhất 1 vai trò.';
+        return;
+      }
+      if (roles.includes('warehouse') && !warehouse_id) {
+        msg.className = 'error-msg';
+        msg.textContent = 'Vui lòng chọn kho phụ trách cho vai trò Thủ kho.';
         return;
       }
 
       try {
         await apiFetch('/api/users', {
           method: 'POST',
-          body: JSON.stringify({ username, password, full_name, role, warehouse_id }),
+          body: JSON.stringify({ username, password, full_name, roles, warehouse_id }),
         });
         msg.className = 'success-msg';
         msg.textContent = `✅ Đã tạo tài khoản "${username}" thành công!`;
         document.getElementById('fullName').value = '';
         document.getElementById('username').value = '';
         document.getElementById('password').value = '';
+        document.querySelectorAll('.role-checkbox').forEach((el) => { el.checked = false; });
+        onRoleChange();
         loadUsers();
       } catch (err) {
         msg.className = 'error-msg';
@@ -280,7 +301,7 @@
             <div class="info">
               <div class="name">${u.full_name} ${u.is_active ? '' : '<span class="badge co_hang_tra" style="margin-left:6px;">Đã khoá</span>'}</div>
               <div class="meta">
-                @${u.username} &nbsp;·&nbsp; ${roleLabel(u.role)}
+                @${u.username} &nbsp;·&nbsp; ${(u.roles || [u.role]).map(roleLabel).join(' + ')}
                 ${u.warehouse_name ? ' · ' + u.warehouse_name : ''}
               </div>
               ${
@@ -308,7 +329,7 @@
       ).join('');
 
       let permissionsHtml = '';
-      if (user.role === 'leader') {
+      if (hasUserRole(user, 'leader')) {
         if (!permissionsList) {
           try {
             const permData = await apiFetch('/api/users/permissions-list');
@@ -335,19 +356,26 @@
         `;
       }
 
+      const userRoles = u.roles && u.roles.length > 0 ? u.roles : [u.role];
+      const roleCheckbox = (value, label) => `
+        <label style="display:flex; align-items:center; gap:8px; font-size:15px; color:var(--text); margin:0;">
+          <input type="checkbox" class="edit-role-checkbox" value="${value}" ${userRoles.includes(value) ? 'checked' : ''} onchange="onEditRoleChange()" style="width:20px; height:20px;" />
+          ${label}
+        </label>`;
+
       document.getElementById('editContent').innerHTML = `
         <label>Họ tên</label>
         <input type="text" id="editFullName" value="${u.full_name}" />
 
-        <label>Vai trò</label>
-        <select id="editRole" onchange="onEditRoleChange()">
-          <option value="sales" ${u.role === 'sales' ? 'selected' : ''}>Sales</option>
-          <option value="warehouse" ${u.role === 'warehouse' ? 'selected' : ''}>Thủ kho</option>
-          <option value="leader" ${u.role === 'leader' ? 'selected' : ''}>Quản lý</option>
-        </select>
+        <label>Vai trò (có thể chọn nhiều)</label>
+        <div style="display:flex; flex-direction:column; gap:8px; margin-top:6px;">
+          ${roleCheckbox('sales', 'Sales')}
+          ${roleCheckbox('warehouse', 'Thủ kho')}
+          ${roleCheckbox('leader', 'Quản lý')}
+        </div>
 
-        <label id="editWarehouseLabel" style="display:${u.role === 'warehouse' ? '' : 'none'};">Kho phụ trách</label>
-        <select id="editWarehouseSelect" style="display:${u.role === 'warehouse' ? '' : 'none'};">${warehouseOpts}</select>
+        <label id="editWarehouseLabel" style="display:${userRoles.includes('warehouse') ? '' : 'none'};">Kho phụ trách (do có vai trò Thủ kho)</label>
+        <select id="editWarehouseSelect" style="display:${userRoles.includes('warehouse') ? '' : 'none'};">${warehouseOpts}</select>
 
         <label>Đặt lại mật khẩu (bỏ trống nếu không đổi)</label>
         <input type="text" id="editPassword" placeholder="Mật khẩu mới..." />
@@ -365,21 +393,32 @@
     }
 
     function onEditRoleChange() {
-      const role = document.getElementById('editRole').value;
-      const show = role === 'warehouse';
+      const roles = getSelectedRoles('edit');
+      const show = roles.includes('warehouse');
       document.getElementById('editWarehouseLabel').style.display = show ? '' : 'none';
       document.getElementById('editWarehouseSelect').style.display = show ? '' : 'none';
     }
 
     async function saveEdit() {
       const full_name = document.getElementById('editFullName').value.trim();
-      const role = document.getElementById('editRole').value;
-      const warehouse_id = role === 'warehouse' ? document.getElementById('editWarehouseSelect').value : null;
+      const roles = getSelectedRoles('edit');
+      const warehouse_id = roles.includes('warehouse') ? document.getElementById('editWarehouseSelect').value : null;
       const new_password = document.getElementById('editPassword').value;
       const msg = document.getElementById('editMsg');
 
-      const body = { full_name, role, warehouse_id, new_password: new_password || undefined };
-      if (user.role === 'leader') {
+      if (roles.length === 0) {
+        msg.className = 'error-msg';
+        msg.textContent = 'Vui lòng chọn ít nhất 1 vai trò.';
+        return;
+      }
+      if (roles.includes('warehouse') && !warehouse_id) {
+        msg.className = 'error-msg';
+        msg.textContent = 'Vui lòng chọn kho phụ trách cho vai trò Thủ kho.';
+        return;
+      }
+
+      const body = { full_name, roles, warehouse_id, new_password: new_password || undefined };
+      if (hasUserRole(user, 'leader')) {
         body.permissions = Array.from(document.querySelectorAll('.perm-checkbox:checked')).map((el) => el.value);
       }
 

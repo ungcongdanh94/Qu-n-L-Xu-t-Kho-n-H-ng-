@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const db = require('../db');
-const { requireAuth, requireRole, hasPermission } = require('../middleware/auth');
+const { requireAuth, requireRole, hasPermission, getUserRoles } = require('../middleware/auth');
 const { runOcr } = require('../ocr');
 const { broadcast } = require('../sse');
 const { sendPushToUsers, getRelevantUserIds } = require('../push');
@@ -231,13 +231,14 @@ router.post(
 
     // Thu kho: luon xac nhan cho DUNG kho cua chinh minh (bo qua neu client gui warehouse_id khac).
     // Quan ly (leader): phai chi dinh ro dang xac nhan cho kho nao vi ho khong gan co dinh 1 kho.
-    let warehouseId;
-    if (req.user.role === 'warehouse') {
+    // Neu client gui ro warehouse_id thi dung dung gia tri do (cho phep leader/nguoi kiem
+    // nhieu vai tro chi dinh kho khac). Neu khong, va nguoi dung co vai tro Thu kho va da
+    // duoc gan 1 kho co dinh, tu dong dung kho cua chinh ho.
+    let warehouseId = parseInt(req.body.warehouse_id, 10) || null;
+    if (!warehouseId && getUserRoles(req.user).includes('warehouse') && req.user.warehouse_id) {
       warehouseId = req.user.warehouse_id;
-    } else {
-      warehouseId = parseInt(req.body.warehouse_id, 10);
-      if (!warehouseId) return res.status(400).json({ error: 'Vui long chon kho can xac nhan.' });
     }
+    if (!warehouseId) return res.status(400).json({ error: 'Vui long chon kho can xac nhan.' });
 
     const ow = db
       .prepare('SELECT * FROM order_warehouses WHERE order_id = ? AND warehouse_id = ?')
@@ -299,7 +300,7 @@ router.get('/', requireAuth, (req, res) => {
   const params = [];
   let sql;
 
-  const isWarehouseScoped = req.user.role === 'warehouse' && !hasPermission(req.user.id, 'view_all');
+  const isWarehouseScoped = getUserRoles(req.user).includes('warehouse') && !getUserRoles(req.user).includes('leader') && !hasPermission(req.user.id, 'view_all');
 
   if (isWarehouseScoped) {
     // Thu kho: chi xem don co gan kho cua minh, va loc theo TRANG THAI RIENG cua kho ho
@@ -348,7 +349,7 @@ router.get('/', requireAuth, (req, res) => {
       params.push(to);
     }
   }
-  if (mine === '1' && req.user.role === 'sales') {
+  if (mine === '1' && getUserRoles(req.user).includes('sales')) {
     sql += ' AND o.sales_user_id = ?';
     params.push(req.user.id);
   }
@@ -384,12 +385,12 @@ router.delete('/:id', requireAuth, requireRole('leader', 'sales', 'warehouse'), 
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!order) return res.status(404).json({ error: 'Khong tim thay don hang.' });
 
-  const canDeleteAny = req.user.role === 'leader' || hasPermission(req.user.id, 'delete_any_order');
+  const canDeleteAny = getUserRoles(req.user).includes('leader') || hasPermission(req.user.id, 'delete_any_order');
 
   if (!canDeleteAny) {
     // Sales/thu kho thuong: chi duoc xoa DUNG don cua chinh minh tao, va CHI KHI don chua duoc
     // kho xu ly gi (con "cho soan hang") - tranh xoa nham don da co thu kho lam viec, gay roi cho kho.
-    if (req.user.role !== 'sales' || order.sales_user_id !== req.user.id) {
+    if (!getUserRoles(req.user).includes('sales') || order.sales_user_id !== req.user.id) {
       return res.status(403).json({ error: 'Ban khong co quyen xoa don hang nay.' });
     }
     if (order.status !== 'cho_soan') {

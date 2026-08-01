@@ -236,3 +236,13 @@ Ngoài 3 vai trò cố định (Sales / Thủ kho / Quản lý), Quản lý (lea
 - **👥 Quản trị** — cho phép vào trang Quản lý tài khoản (tạo/sửa tài khoản, quản lý kho, tải file sao lưu). Vì lý do an toàn, riêng việc **khôi phục** dữ liệu (ghi đè toàn bộ) vẫn luôn giữ riêng cho Quản lý thật, không cấp được qua quyền này.
 
 **Lưu ý an toàn quan trọng:** chỉ tài khoản có vai trò **Quản lý (leader) thật** mới được cấp/gỡ các quyền riêng này cho người khác — một người chỉ được cấp quyền "Quản trị" sẽ không tự cấp thêm quyền cho mình hoặc người khác được, tránh tình trạng tự leo thang quyền.
+
+## 17. Một tài khoản có thể kiêm nhiều vai trò
+
+Trước đây mỗi tài khoản chỉ được gán đúng 1 vai trò (Sales HOẶC Thủ kho HOẶC Quản lý). Giờ khi tạo/sửa tài khoản trong **Quản lý tài khoản**, ô "Vai trò" là **checkbox chọn được nhiều lựa chọn cùng lúc** — ví dụ 1 người vừa tick "Sales" vừa tick "Thủ kho" sẽ:
+- Thấy đủ cả tab "Đăng đơn", "Đơn hàng" (của Sales) và "Xử lý kho" (của Thủ kho).
+- Khi vào "Xử lý kho", tự động thấy đúng đơn hàng của kho mình phụ trách (cần chọn Kho phụ trách khi tick vai trò Thủ kho).
+
+Nếu tick thêm cả vai trò "Quản lý" cùng 1-2 vai trò khác, hệ thống sẽ ưu tiên xử lý người đó như Quản lý ở những chỗ cần phân biệt (ví dụ xem được toàn bộ đơn hàng mọi kho, không bị giới hạn theo 1 kho).
+
+**Lưu ý:** người dùng cần **đăng xuất và đăng nhập lại** sau khi được đổi vai trò để giao diện cập nhật đúng (vai trò được lưu trong phiên đăng nhập).

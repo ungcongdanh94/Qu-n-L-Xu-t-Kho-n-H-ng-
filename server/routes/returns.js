@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, getUserRoles } = require('../middleware/auth');
 const { broadcast } = require('../sse');
 const { sendPushToUsers, getRelevantUserIds, getLeaderUserIds } = require('../push');
 const { upload } = require('../uploadConfig');
@@ -25,7 +25,8 @@ router.post('/', requireAuth, requireRole('sales', 'warehouse', 'leader'), uploa
 
   const hasPhoto = !!req.file;
   if (hasPhoto) await compressImage(req.file.path);
-  if (hasPhoto && req.user.role === 'sales') {
+  const canAttachPhoto = getUserRoles(req.user).includes('warehouse') || getUserRoles(req.user).includes('leader');
+  if (hasPhoto && !canAttachPhoto) {
     return res.status(400).json({
       error: 'Sales khong dinh kem hinh khi lap phieu. Neu khach da tra hang truc tiep tai kho, de thu kho lap phieu va chup hinh.',
     });
@@ -65,7 +66,7 @@ router.post('/', requireAuth, requireRole('sales', 'warehouse', 'leader'), uploa
 router.post('/:id/photo', requireAuth, requireRole('warehouse', 'leader'), upload.single('photo'), async (req, res) => {
   const ret = db.prepare('SELECT * FROM returns WHERE id = ?').get(req.params.id);
   if (!ret) return res.status(404).json({ error: 'Khong tim thay phieu tra hang.' });
-  if (req.user.role === 'warehouse' && ret.warehouse_id !== req.user.warehouse_id) {
+  if (getUserRoles(req.user).includes('warehouse') && !getUserRoles(req.user).includes('leader') && ret.warehouse_id !== req.user.warehouse_id) {
     return res.status(403).json({ error: 'Phieu nay khong thuoc kho cua ban.' });
   }
   if (ret.status !== 'cho_kho_xac_nhan') {
@@ -152,7 +153,7 @@ router.get('/', requireAuth, (req, res) => {
     params.push(`%${customer}%`);
   }
 
-  if (req.user.role === 'warehouse') {
+  if (getUserRoles(req.user).includes('warehouse') && !getUserRoles(req.user).includes('leader')) {
     sql += ' AND r.warehouse_id = ?';
     params.push(req.user.warehouse_id);
   } else if (warehouse_id) {
