@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#1e5f8c" />
+<title>Đăng nhập - Quản lý xuất kho</title>
+<link rel="icon" href="/favicon.png?v=3" type="image/png" />
+<link rel="manifest" href="/manifest.json" />
+<link rel="apple-touch-icon" href="/icons/icon-192.png?v=3" />
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="center-page">
+    <div class="card">
+      <img src="/images/logo.png" alt="Công Thành" style="display:block; max-width:220px; margin:0 auto 12px;" />
+      <div class="logo-sub" style="margin-top:0;">Quản lý xuất kho — Đăng nhập để tiếp tục</div>
+
+      <label>Tên đăng nhập</label>
+      <input type="text" id="username" autocomplete="username" />
+
+      <label>Mật khẩu</label>
+      <input type="password" id="password" autocomplete="current-password" />
+
+      <button class="btn" id="loginBtn" onclick="doLogin()">Đăng nhập</button>
+      <div id="msg" class="error-msg"></div>
+    </div>
+  </div>
+
+  <script src="/js/common.js"></script>
+  <script>
+    // Neu da dang nhap roi thi vao thang trang chinh
+    if (getToken()) window.location.href = '/index.html';
+
+    async function doLogin() {
+      const username = document.getElementById('username').value.trim();
+      const password = document.getElementById('password').value;
+      const msg = document.getElementById('msg');
+      const btn = document.getElementById('loginBtn');
+      msg.textContent = '';
+      if (!username || !password) {
+        msg.textContent = 'Vui lòng nhập đầy đủ thông tin.';
+        return;
+      }
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>Đang đăng nhập...';
+      try {
+        const data = await apiFetch('/api/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ username, password }),
+        });
+        saveSession(data.token, data.user);
+        window.location.href = '/index.html';
+      } catch (err) {
+        msg.textContent = err.message;
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Đăng nhập';
+      }
+    }
+
+    document.getElementById('password').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') doLogin();
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#1e5f8c" />
+<title>Hàng trả</title>
+<link rel="icon" href="/favicon.png?v=3" type="image/png" />
+<link rel="manifest" href="/manifest.json" />
+<link rel="apple-touch-icon" href="/icons/icon-192.png?v=3" />
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="topbar"></div>
+  <div id="tabs"></div>
+
+  <div class="container">
+    <div class="card">
+      <h2>↩️ Lập phiếu trả hàng mới</h2>
+      <p id="roleHint" class="hint"></p>
+
+      <label>Kho</label>
+      <select id="warehouseSelect">
+        <option value="">-- Chọn kho --</option>
+      </select>
+
+      <label>Tên khách hàng</label>
+      <input type="text" id="customerName" placeholder="Nhập tên khách hàng..." list="customerList" />
+      <datalist id="customerList"></datalist>
+
+      <label>Ghi chú (tuỳ chọn)</label>
+      <textarea id="note" placeholder="Ví dụ: lý do trả hàng, số lượng, tình trạng hàng..."></textarea>
+
+      <div id="photoSection" style="display:none;">
+        <label>Hình xác nhận hàng trả (chụp ngay khi khách trả tại kho)</label>
+        <div style="display:flex; gap:8px; margin-top:6px; margin-bottom:6px;">
+          <button type="button" class="btn secondary" style="margin:0; flex:1;" onclick="document.getElementById('photoInputCamera').click()">📷 Chụp ảnh</button>
+        </div>
+        <input type="file" accept="image/*" capture="environment" id="photoInputCamera" style="display:none" onchange="onPhotoSelected(event)" />
+        <div class="file-drop" onclick="document.getElementById('photoInput').click()">
+          <div id="dropText">🖼️ Nhấn để chọn ảnh có sẵn (hoặc dán ảnh bằng Ctrl+V)</div>
+          <img id="preview" style="display:none;" />
+        </div>
+        <input type="file" id="photoInput" accept="image/*" style="display:none" onchange="onPhotoSelected(event)" />
+      </div>
+
+      <button class="btn" onclick="submitReturn()">Lập phiếu trả hàng</button>
+      <div id="msg"></div>
+    </div>
+
+    <div class="card">
+      <h2>📋 Danh sách phiếu trả hàng</h2>
+      <div class="filters">
+        <select id="statusFilter" onchange="loadReturns()">
+          <option value="">Tất cả trạng thái</option>
+          <option value="cho_kho_xac_nhan">Chờ kho chụp hình</option>
+          <option value="cho_sales_xac_nhan">Chờ sales xác nhận</option>
+          <option value="hoan_tat">Hoàn tất</option>
+        </select>
+        <select id="warehouseFilter" onchange="loadReturns()" style="display:none;"></select>
+      </div>
+      <div id="returnList">Đang tải...</div>
+    </div>
+  </div>
+
+  <div id="modalOverlay" class="modal-overlay">
+    <div class="card">
+      <h2 id="modalTitle">Chi tiết phiếu trả hàng</h2>
+      <div id="modalContent"></div>
+      <button class="btn secondary" onclick="closeModal()">Đóng</button>
+    </div>
+  </div>
+
+  <script src="/js/common.js"></script>
+  <script>
+    const user = requireLogin(['sales', 'warehouse', 'leader']);
+    document.getElementById('topbar').innerHTML = renderTopbar('Hàng trả');
+    document.getElementById('tabs').innerHTML = renderNavTabs('returns');
+
+    let selectedFile = null;
+    let currentReturn = null;
+
+    // Chi thu kho / quan ly moi duoc dinh kem hinh ngay luc lap phieu
+    // (truong hop khach tra hang truc tiep tai kho, kho lap phieu va chup hinh luon)
+    const canAttachPhotoOnCreate = user.role === 'warehouse' || user.role === 'leader';
+    document.getElementById('photoSection').style.display = canAttachPhotoOnCreate ? '' : 'none';
+    document.getElementById('roleHint').textContent =
+      user.role === 'sales'
+        ? 'Dùng khi khách báo trước sẽ trả hàng: điền thông tin bên dưới, thủ kho sẽ chụp hình xác nhận khi nhận được hàng trả.'
+        : 'Nếu khách trả hàng trực tiếp tại kho: chụp hình xác nhận ngay bên dưới, sales sẽ xác nhận đã tiếp nhận thông tin. Nếu chỉ mới nhận thông báo (chưa có hàng), có thể để trống hình, sales sẽ theo dõi và kho chụp hình khi hàng về sau.';
+
+    function onPhotoSelected(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      selectedFile = file;
+      const preview = document.getElementById('preview');
+      preview.src = URL.createObjectURL(file);
+      preview.style.display = 'block';
+      document.getElementById('dropText').textContent = 'Nhấn để chọn hình khác';
+    }
+
+    async function loadWarehouses() {
+      const data = await apiFetch('/api/warehouses');
+      const opts = data.warehouses.map((w) => `<option value="${w.id}">${w.name}</option>`).join('');
+      document.getElementById('warehouseSelect').innerHTML = '<option value="">-- Chọn kho --</option>' + opts;
+      if (user.role === 'leader') {
+        const filterEl = document.getElementById('warehouseFilter');
+        filterEl.style.display = '';
+        filterEl.innerHTML = '<option value="">Tất cả các kho</option>' + opts;
+      }
+    }
+
+    async function loadCustomerSuggestions() {
+      try {
+        const data = await apiFetch('/api/customers');
+        document.getElementById('customerList').innerHTML = data.customers
+          .map((c) => `<option value="${c.name}"></option>`)
+          .join('');
+      } catch (err) {}
+    }
+
+    async function submitReturn() {
+      const warehouseId = document.getElementById('warehouseSelect').value;
+      const customerName = document.getElementById('customerName').value.trim();
+      const note = document.getElementById('note').value.trim();
+      const msg = document.getElementById('msg');
+      msg.className = '';
+      msg.textContent = '';
+
+      if (!warehouseId) { msg.className = 'error-msg'; msg.textContent = 'Vui lòng chọn kho.'; return; }
+      if (!customerName) { msg.className = 'error-msg'; msg.textContent = 'Vui lòng nhập tên khách hàng.'; return; }
+
+      const form = new FormData();
+      form.append('warehouse_id', warehouseId);
+      form.append('customer_name', customerName);
+      if (note) form.append('note', note);
+      if (canAttachPhotoOnCreate && selectedFile) form.append('photo', selectedFile);
+
+      try {
+        await apiFetch('/api/returns', { method: 'POST', body: form });
+        msg.className = 'success-msg';
+        msg.textContent = '✅ Đã lập phiếu trả hàng thành công!';
+        document.getElementById('customerName').value = '';
+        document.getElementById('note').value = '';
+        selectedFile = null;
+        document.getElementById('photoInput').value = '';
+        document.getElementById('preview').style.display = 'none';
+        document.getElementById('dropText').textContent = '📷 Nhấn để chụp / chọn hình';
+        loadReturns();
+        loadCustomerSuggestions();
+      } catch (err) {
+        msg.className = 'error-msg';
+        msg.textContent = err.message;
+      }
+    }
+
+    async function loadReturns() {
+      const status = document.getElementById('statusFilter').value;
+      const warehouseId = document.getElementById('warehouseFilter').value;
+      const el = document.getElementById('returnList');
+      el.innerHTML = 'Đang tải...';
+      try {
+        const params = new URLSearchParams();
+        if (status) params.set('status', status);
+        if (warehouseId) params.set('warehouse_id', warehouseId);
+        const data = await apiFetch(`/api/returns?${params.toString()}`);
+        if (data.returns.length === 0) {
+          el.innerHTML = '<p class="hint">Không có phiếu trả hàng nào.</p>';
+          return;
+        }
+        el.innerHTML = data.returns
+          .map(
+            (r) => `
+          <div class="order-item" onclick="openReturn(${r.id})">
+            ${r.photo_path ? `<img src="/uploads/${r.photo_path}" onclick="event.stopPropagation(); openImageViewer('/uploads/${r.photo_path}')" />` : '<div style="width:64px;height:64px;background:#f1f1f1;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:11px;">Chưa có hình</div>'}
+            <div class="info">
+              <div class="name">${r.customer_name}</div>
+              <div class="meta">
+                <span class="badge ${r.status}">${statusLabel(r.status)}</span>
+                &nbsp;·&nbsp; ${r.warehouse_name || ''} &nbsp;·&nbsp; Lập bởi: ${r.initiated_by_username} &nbsp;·&nbsp; ${formatDateTime(r.created_at)}
+              </div>
+            </div>
+          </div>`
+          )
+          .join('');
+      } catch (err) {
+        el.innerHTML = `<p class="error-msg">${err.message}</p>`;
+      }
+    }
+
+    async function openReturn(id) {
+      const data = await apiFetch(`/api/returns/${id}`);
+      currentReturn = data.return;
+      document.getElementById('modalTitle').textContent = currentReturn.customer_name;
+
+      let actionHtml = '';
+      if (currentReturn.status === 'cho_kho_xac_nhan' && (user.role === 'warehouse' || user.role === 'leader')) {
+        actionHtml = `
+          <label>Chụp hình xác nhận đã nhận hàng trả</label>
+          <div style="display:flex; gap:8px; margin-top:6px;">
+            <button type="button" class="btn secondary" style="margin:0; flex:1;" onclick="document.getElementById('confirmPhotoCamera').click()">📷 Chụp ảnh</button>
+            <button type="button" class="btn secondary" style="margin:0; flex:1;" onclick="document.getElementById('confirmPhotoGallery').click()">🖼️ Chọn ảnh có sẵn</button>
+          </div>
+          <input type="file" accept="image/*" capture="environment" id="confirmPhotoCamera" style="display:none" onchange="confirmWithPhoto(this)" />
+          <input type="file" accept="image/*" id="confirmPhotoGallery" style="display:none" onchange="confirmWithPhoto(this)" />
+        `;
+      } else if (currentReturn.status === 'cho_sales_xac_nhan' && (user.role === 'sales' || user.role === 'leader')) {
+        actionHtml = `<button class="btn" onclick="confirmBySales()">✅ Xác nhận đã tiếp nhận thông tin</button>`;
+      }
+
+      document.getElementById('modalContent').innerHTML = `
+        <p class="hint">
+          Trạng thái: <span class="badge ${currentReturn.status}">${statusLabel(currentReturn.status)}</span><br/>
+          Kho: ${currentReturn.warehouse_name || ''}<br/>
+          Lập bởi: ${currentReturn.initiated_by_username} (${roleLabel(currentReturn.initiated_by_role)}) · ${formatDateTime(currentReturn.created_at)}<br/>
+          ${currentReturn.confirmed_by_username ? 'Xác nhận bởi: ' + currentReturn.confirmed_by_username : ''}
+        </p>
+        ${currentReturn.note ? `<div class="note-box">📝 <b>Ghi chú:</b> ${currentReturn.note}</div>` : ''}
+        ${currentReturn.photo_path ? `<img src="/uploads/${currentReturn.photo_path}" style="max-width:100%;border-radius:8px;cursor:pointer;" onclick="openImageViewer('/uploads/${currentReturn.photo_path}')" />` : '<p class="hint">Chưa có hình xác nhận.</p>'}
+        ${actionHtml}
+        <div id="actionMsg"></div>
+      `;
+      document.getElementById('modalOverlay').style.display = 'flex';
+    }
+
+    async function confirmWithPhoto(inputEl) {
+      const file = inputEl.files[0];
+      if (!file || !currentReturn) return;
+      const msg = document.getElementById('actionMsg');
+      msg.className = 'hint';
+      msg.innerHTML = '<span class="spinner" style="border-top-color:var(--primary); border-color:rgba(30,95,140,0.3);"></span>Đang tải hình lên...';
+      const form = new FormData();
+      form.append('photo', file);
+      try {
+        await apiFetch(`/api/returns/${currentReturn.id}/photo`, { method: 'POST', body: form });
+        msg.className = 'success-msg';
+        msg.textContent = '✅ Đã xác nhận thành công!';
+        loadReturns();
+        setTimeout(() => openReturn(currentReturn.id), 600);
+      } catch (err) {
+        msg.className = 'error-msg';
+        msg.textContent = err.message;
+      }
+    }
+
+    async function confirmBySales() {
+      if (!currentReturn) return;
+      const msg = document.getElementById('actionMsg');
+      try {
+        await apiFetch(`/api/returns/${currentReturn.id}/confirm`, { method: 'POST' });
+        msg.className = 'success-msg';
+        msg.textContent = '✅ Đã xác nhận tiếp nhận thông tin!';
+        loadReturns();
+        setTimeout(() => openReturn(currentReturn.id), 600);
+      } catch (err) {
+        msg.className = 'error-msg';
+        msg.textContent = err.message;
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('modalOverlay').style.display = 'none';
+      currentReturn = null;
+    }
+
+    loadWarehouses();
+    window.refreshList = loadReturns;
+    loadCustomerSuggestions();
+    loadReturns();
+  </script>
+</body>
+</html>

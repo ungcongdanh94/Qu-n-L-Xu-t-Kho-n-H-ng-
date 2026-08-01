@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#1e5f8c" />
+<title>Tổng quan - Quản lý</title>
+<link rel="icon" href="/favicon.png?v=3" type="image/png" />
+<link rel="manifest" href="/manifest.json" />
+<link rel="apple-touch-icon" href="/icons/icon-192.png?v=3" />
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="topbar"></div>
+  <div id="tabs"></div>
+
+  <div class="container">
+    <div class="card">
+      <h2>📊 Tổng quan đơn hàng</h2>
+      <div id="summary" style="display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap;"></div>
+
+      <div class="day-nav">
+        <button onclick="shiftDay(-1)">◀</button>
+        <input type="date" id="dayFilter" onchange="onDayChange()" />
+        <button onclick="shiftDay(1)">▶</button>
+        <button class="today-btn" onclick="goToday()">Hôm nay</button>
+        <button class="today-btn" onclick="clearDay()">Xem tất cả ngày</button>
+      </div>
+
+      <div class="filters">
+        <select id="statusFilter" onchange="loadOrders()">
+          <option value="">Tất cả trạng thái</option>
+          <option value="cho_soan">Chờ soạn hàng</option>
+          <option value="da_soan">Đã giao hàng</option>
+          <option value="co_hang_tra">Có hàng trả</option>
+        </select>
+        <select id="orderTypeFilter" onchange="loadOrders()">
+          <option value="">Tất cả loại đơn</option>
+          <option value="xuat_kho">Xuất kho</option>
+          <option value="nhap_kho">Nhập kho</option>
+        </select>
+      </div>
+      <div class="filters">
+        <select id="warehouseFilter" onchange="loadOrders()">
+          <option value="">Tất cả các kho</option>
+        </select>
+        <input type="text" id="customerFilter" placeholder="Tìm theo tên khách..." oninput="debouncedLoad()" />
+      </div>
+
+      <div id="orderList">Đang tải...</div>
+    </div>
+  </div>
+
+  <div id="modalOverlay" class="modal-overlay">
+    <div class="card">
+      <h2 id="modalTitle">Chi tiết đơn hàng</h2>
+      <div id="modalContent"></div>
+      <button class="btn secondary" onclick="closeModal()">Đóng</button>
+    </div>
+  </div>
+
+  <script src="/js/common.js"></script>
+  <script>
+    const user = requireLogin(['leader']);
+    document.getElementById('topbar').innerHTML = renderTopbar('Tổng quan');
+    document.getElementById('tabs').innerHTML = renderNavTabs('dashboard');
+    document.getElementById('dayFilter').value = todayStr();
+
+    function shiftDay(delta) {
+      const el = document.getElementById('dayFilter');
+      el.value = addDaysStr(el.value || todayStr(), delta);
+      loadOrders();
+    }
+    function goToday() {
+      document.getElementById('dayFilter').value = todayStr();
+      loadOrders();
+    }
+    function clearDay() {
+      document.getElementById('dayFilter').value = '';
+      loadOrders();
+    }
+    function onDayChange() {
+      loadOrders();
+    }
+
+    let debounceTimer = null;
+    function debouncedLoad() {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(loadOrders, 400);
+    }
+
+    async function loadWarehouseFilter() {
+      try {
+        const data = await apiFetch('/api/warehouses');
+        const select = document.getElementById('warehouseFilter');
+        select.innerHTML =
+          '<option value="">Tất cả các kho</option>' +
+          data.warehouses.map((w) => `<option value="${w.id}">${w.name}</option>`).join('');
+      } catch (err) {}
+    }
+
+    async function loadOrders() {
+      const status = document.getElementById('statusFilter').value;
+      const orderType = document.getElementById('orderTypeFilter').value;
+      const customer = document.getElementById('customerFilter').value.trim();
+      const date = document.getElementById('dayFilter').value;
+      const warehouseId = document.getElementById('warehouseFilter').value;
+      const el = document.getElementById('orderList');
+      el.innerHTML = 'Đang tải...';
+
+      const params = new URLSearchParams();
+      if (status) params.set('status', status);
+      if (orderType) params.set('order_type', orderType);
+      if (customer) params.set('customer', customer);
+      if (date) params.set('date', date);
+      if (warehouseId) params.set('warehouse_id', warehouseId);
+
+      try {
+        const data = await apiFetch(`/api/orders?${params.toString()}`);
+        renderSummary(data.orders);
+        if (data.orders.length === 0) {
+          el.innerHTML = '<p class="hint">Không có đơn hàng nào phù hợp.</p>';
+          return;
+        }
+        el.innerHTML = data.orders
+          .map(
+            (o) => `
+          <div class="order-item">
+            <img src="/uploads/${o.order_photo_path}" onclick="event.stopPropagation(); openImageViewer('/uploads/${o.order_photo_path}')" />
+            <div class="info" onclick="openOrder(${o.id})">
+              <div class="name">${orderDisplayName(o)}</div>
+              <div class="meta">
+                <span class="badge ${o.order_type}">${orderTypeLabel(o.order_type)}</span>
+                <span class="badge ${o.status}">${statusLabel(o.status)}</span>
+              </div>
+              <div class="meta">
+                ${(o.warehouses || [])
+                  .map((w) => `${w.warehouse_name}: <span class="badge ${w.status}" style="font-size:10px; padding:2px 6px;">${statusLabel(w.status)}</span>`)
+                  .join(' &nbsp;·&nbsp; ')}
+                &nbsp;·&nbsp; Sales: ${o.sales_username} &nbsp;·&nbsp; ${formatDateTime(o.created_at)}
+              </div>
+              ${o.note ? `<div class="note-inline">📝 ${o.note}</div>` : ''}
+            </div>
+          </div>`
+          )
+          .join('');
+      } catch (err) {
+        el.innerHTML = `<p class="error-msg">${err.message}</p>`;
+      }
+    }
+
+    function renderSummary(orders) {
+      const counts = { cho_soan: 0, da_soan: 0, co_hang_tra: 0 };
+      orders.forEach((o) => { if (counts[o.status] !== undefined) counts[o.status]++; });
+      document.getElementById('summary').innerHTML = `
+        <div class="badge cho_soan" style="font-size:14px; padding:8px 14px;">Chờ soạn: ${counts.cho_soan}</div>
+        <div class="badge da_soan" style="font-size:14px; padding:8px 14px;">Đã giao: ${counts.da_soan}</div>
+        <div class="badge co_hang_tra" style="font-size:14px; padding:8px 14px;">Hàng trả: ${counts.co_hang_tra}</div>
+      `;
+    }
+
+    async function openOrder(id) {
+      const data = await apiFetch(`/api/orders/${id}`);
+      currentOrderId = id;
+      document.getElementById('modalTitle').textContent = orderDisplayName(data.order);
+
+      const photosHtml = data.photos
+        .map(
+          (p) => `
+        <div>
+          <img src="/uploads/${p.photo_path}" onclick="openImageViewer('/uploads/${p.photo_path}')" />
+          <div class="label">${{ order: 'Đơn gốc', packed: 'Đã giao hàng', return: 'Hàng trả' }[p.type]}${p.warehouse_name ? ' - ' + p.warehouse_name : ''}</div>
+        </div>`
+        )
+        .join('');
+
+      const warehousesBreakdown = (data.order.warehouses || [])
+        .map(
+          (w) =>
+            `${w.warehouse_name}: <span class="badge ${w.status}">${statusLabel(w.status)}</span>${w.confirmed_by_username ? ' (bởi ' + w.confirmed_by_username + ')' : ''}`
+        )
+        .join('<br/>');
+
+      document.getElementById('modalContent').innerHTML = `
+        <p class="hint">
+          Loại đơn: <span class="badge ${data.order.order_type}">${orderTypeLabel(data.order.order_type)}</span><br/>
+          Trạng thái chung: <span class="badge ${data.order.status}">${statusLabel(data.order.status)}</span><br/>
+          Sales tạo đơn: ${data.order.sales_username}<br/>
+          Tạo lúc: ${formatDateTime(data.order.created_at)}
+        </p>
+        ${data.order.note ? `<div class="note-box">📝 <b>Ghi chú:</b> ${data.order.note}</div>` : ''}
+        <p class="hint">${warehousesBreakdown}</p>
+        <div class="photo-gallery">${photosHtml}</div>
+        <button class="btn danger" onclick="deleteCurrentOrder()">🗑️ Xoá đơn hàng này</button>
+        <div id="deleteMsg"></div>
+      `;
+      document.getElementById('modalOverlay').style.display = 'flex';
+    }
+
+    async function deleteCurrentOrder() {
+      if (!currentOrderId) return;
+      const confirmed = confirm('Xoá đơn hàng này? Toàn bộ hình ảnh liên quan sẽ bị xoá vĩnh viễn, không thể khôi phục.');
+      if (!confirmed) return;
+      try {
+        await apiFetch(`/api/orders/${currentOrderId}`, { method: 'DELETE' });
+        closeModal();
+        loadOrders();
+      } catch (err) {
+        document.getElementById('deleteMsg').innerHTML = `<p class="error-msg">${err.message}</p>`;
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('modalOverlay').style.display = 'none';
+      currentOrderId = null;
+    }
+
+    let currentOrderId = null;
+    window.refreshList = loadOrders;
+    loadWarehouseFilter();
+    loadOrders();
+  </script>
+</body>
+</html>

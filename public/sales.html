@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#1e5f8c" />
+<title>Đăng đơn hàng - Sales</title>
+<link rel="icon" href="/favicon.png?v=3" type="image/png" />
+<link rel="manifest" href="/manifest.json" />
+<link rel="apple-touch-icon" href="/icons/icon-192.png?v=3" />
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="topbar"></div>
+  <div id="tabs"></div>
+
+  <div class="container">
+    <div class="card">
+      <h2>📤 Đăng đơn hàng mới</h2>
+      <p class="hint">Chụp hình đơn hàng (viết tay hoặc in). Hệ thống sẽ tự đọc hình và gợi ý tên khách hàng, anh/chị xác nhận lại trước khi lưu.</p>
+
+      <label>Kho nhận đơn hàng (có thể chọn nhiều kho nếu đơn cần lấy hàng từ nhiều nơi)</label>
+      <div id="warehouseCheckboxes" style="display:flex; flex-direction:column; gap:8px; margin-top:6px;">
+        <span class="hint">Đang tải danh sách kho...</span>
+      </div>
+
+      <label>Loại đơn</label>
+      <select id="orderType">
+        <option value="xuat_kho">📤 Xuất kho</option>
+        <option value="nhap_kho">📥 Nhập kho</option>
+      </select>
+
+      <label>Hình đơn hàng</label>
+      <div style="display:flex; gap:8px; margin-top:6px; margin-bottom:6px;">
+        <button type="button" class="btn secondary" style="margin:0; flex:1;" onclick="document.getElementById('photoInputCamera').click()">📷 Chụp ảnh</button>
+      </div>
+      <input type="file" id="photoInputCamera" accept="image/*" capture="environment" style="display:none" onchange="onPhotoSelected(event)" />
+      <div class="file-drop" id="dropZone" tabindex="0" onclick="document.getElementById('photoInput').click()">
+        <div id="dropText">🖼️ Nhấn để chọn ảnh có sẵn<br/><span style="font-size:11px;">(hoặc dán ảnh bằng Ctrl+V — copy từ Zalo, Excel, ảnh chụp màn hình...)</span></div>
+        <img id="preview" style="display:none;" />
+      </div>
+      <input type="file" id="photoInput" accept="image/*" style="display:none" onchange="onPhotoSelected(event)" />
+
+      <div id="ocrStatus" class="hint" style="display:none;"></div>
+      <div id="ocrRawTextWrap" style="display:none; margin-top:8px;">
+        <a href="#" onclick="toggleOcrRawText(event)" style="font-size:12px; color:var(--primary);">Xem văn bản OCR gốc (để kiểm tra khi nhận diện sai)</a>
+        <pre id="ocrRawText" style="display:none; white-space:pre-wrap; font-size:11px; background:#f4f6f8; border:1px solid var(--border); border-radius:8px; padding:10px; margin-top:6px; max-height:200px; overflow-y:auto;"></pre>
+      </div>
+
+      <label>Mã đơn hàng (nếu phiếu có, dạng BH...)</label>
+      <input type="text" id="orderCode" placeholder="Ví dụ: BH83746" />
+
+      <label>Tên khách hàng (xác nhận hoặc sửa lại)</label>
+      <input type="text" id="customerName" placeholder="Tên khách hàng sẽ hiện ở đây sau khi quét hình..." list="customerList" />
+      <datalist id="customerList"></datalist>
+
+      <label>Ghi chú (tuỳ chọn)</label>
+      <textarea id="note" placeholder="Ví dụ: giao gấp trong ngày, khách hẹn lấy chiều nay..."></textarea>
+
+      <div style="display:flex; gap:10px;">
+        <button class="btn" id="submitBtn" onclick="submitOrder()" disabled style="margin-top:14px; flex:1;">Lưu đơn hàng</button>
+        <button class="btn secondary" onclick="resetForm()" style="margin-top:14px; flex:1;">↺ Làm lại</button>
+      </div>
+      <div id="msg"></div>
+    </div>
+
+    <div class="card">
+      <h2>📋 Đơn hàng vừa đăng</h2>
+      <p class="hint">Chỉ hiện 5 đơn gần nhất. Xem đầy đủ, lọc theo ngày/trạng thái tại <a href="/myorders.html" style="color:var(--primary); font-weight:600;">Đơn của tôi</a>.</p>
+      <div id="myOrders">Đang tải...</div>
+    </div>
+  </div>
+
+  <div id="modalOverlay" class="modal-overlay">
+    <div class="card">
+      <h2 id="modalTitle">Chi tiết đơn hàng</h2>
+      <div id="modalContent"></div>
+      <button class="btn secondary" onclick="closeModal()">Đóng</button>
+    </div>
+  </div>
+
+  <script src="/js/common.js"></script>
+  <script>
+    const user = requireLogin(['sales', 'leader']);
+    document.getElementById('topbar').innerHTML = renderTopbar('Đăng đơn hàng');
+    document.getElementById('tabs').innerHTML = renderNavTabs('sales');
+
+    let selectedFile = null;
+
+    function onPhotoSelected(e) {
+      const file = e.target.files[0];
+      if (!file) return;
+      handleFile(file);
+    }
+
+    function getSelectedWarehouseIds() {
+      return Array.from(document.querySelectorAll('.warehouse-checkbox:checked')).map((el) => el.value);
+    }
+
+    function handleFile(file) {
+      const ids = getSelectedWarehouseIds();
+      if (ids.length === 0) {
+        alert('Vui lòng chọn ít nhất 1 kho nhận đơn hàng trước khi chụp/chọn/dán hình.');
+        document.getElementById('photoInput').value = '';
+        return;
+      }
+      selectedFile = file;
+      const preview = document.getElementById('preview');
+      preview.src = URL.createObjectURL(file);
+      preview.style.display = 'block';
+      document.getElementById('dropText').innerHTML = 'Nhấn để chọn hình khác';
+      runOcrOnFile();
+    }
+
+    // Cho phep dan anh bang Ctrl+V (copy tu Zalo, Excel, anh chup man hinh...)
+    document.addEventListener('paste', (e) => {
+      const items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            handleFile(file);
+          }
+          break;
+        }
+      }
+    });
+
+    async function runOcrOnFile() {
+      const ocrStatus = document.getElementById('ocrStatus');
+      const submitBtn = document.getElementById('submitBtn');
+      ocrStatus.style.display = 'block';
+      ocrStatus.innerHTML = '<span class="spinner" style="border-top-color:var(--primary); border-color:rgba(30,95,140,0.3);"></span>Đang đọc hình để nhận diện tên khách hàng...';
+      submitBtn.disabled = true;
+
+      // Neu truoc do da tung quet 1 hinh khac ma chua luu, huy hinh cu do di (tranh rac tren server)
+      if (window.__scannedPhotoFilename) {
+        discardScannedPhoto(window.__scannedPhotoFilename);
+      }
+
+      const form = new FormData();
+      form.append('photo', selectedFile);
+
+      try {
+        const data = await apiFetch('/api/orders/scan', { method: 'POST', body: form });
+        // Chi luu tam thoi - CHUA tao don hang, phai bam "Xac nhan & Luu don hang" moi that su luu
+        window.__scannedPhotoFilename = data.photo_filename;
+        window.__scannedOcr = data.ocr;
+        document.getElementById('customerName').value = data.ocr.suggestedName || '';
+        document.getElementById('orderCode').value = data.ocr.orderCode || '';
+        ocrStatus.innerHTML = data.ocr.suggestedName
+          ? `✅ Đã nhận diện: "<b>${data.ocr.suggestedName}</b>"${data.ocr.orderCode ? ' — Mã đơn: <b>' + data.ocr.orderCode + '</b>' : ''} — vui lòng kiểm tra lại bên dưới.`
+          : '⚠️ Không đọc được tên khách hàng tự động, vui lòng nhập tay bên dưới.';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Xác nhận & Lưu đơn hàng';
+        if (data.ocr.rawText) {
+          document.getElementById('ocrRawTextWrap').style.display = 'block';
+          document.getElementById('ocrRawText').textContent = data.ocr.rawText;
+        }
+      } catch (err) {
+        ocrStatus.innerHTML = `⚠️ Lỗi khi xử lý hình: ${err.message}`;
+      }
+    }
+
+    function discardScannedPhoto(filename) {
+      // Bao server xoa hinh da quet nhung khong dung den (best-effort, khong can cho ket qua)
+      apiFetch('/api/orders/discard-scan', {
+        method: 'POST',
+        body: JSON.stringify({ photo_filename: filename }),
+      }).catch(() => {});
+    }
+
+    async function submitOrder() {
+      const customerName = document.getElementById('customerName').value.trim();
+      const orderCode = document.getElementById('orderCode').value.trim();
+      const note = document.getElementById('note').value.trim();
+      const msg = document.getElementById('msg');
+      msg.className = '';
+      msg.textContent = '';
+
+      const warehouseIds = getSelectedWarehouseIds();
+      if (warehouseIds.length === 0) {
+        msg.className = 'error-msg';
+        msg.textContent = 'Vui lòng chọn ít nhất 1 kho nhận đơn hàng.';
+        return;
+      }
+      if (!customerName) {
+        msg.className = 'error-msg';
+        msg.textContent = 'Vui lòng nhập tên khách hàng.';
+        return;
+      }
+      if (!window.__scannedPhotoFilename) {
+        msg.className = 'error-msg';
+        msg.textContent = 'Vui lòng chụp/chọn hình đơn hàng trước.';
+        return;
+      }
+
+      const submitBtn = document.getElementById('submitBtn');
+      submitBtn.disabled = true;
+      submitBtn.innerHTML = '<span class="spinner"></span>Đang lưu...';
+
+      try {
+        await apiFetch('/api/orders', {
+          method: 'POST',
+          body: JSON.stringify({
+            photo_filename: window.__scannedPhotoFilename,
+            warehouse_ids: warehouseIds.join(','),
+            order_type: document.getElementById('orderType').value,
+            customer_name: customerName,
+            order_code: orderCode,
+            note,
+            ocr_raw_text: window.__scannedOcr ? window.__scannedOcr.rawText : '',
+            ocr_guess: window.__scannedOcr ? window.__scannedOcr.guess : '',
+          }),
+        });
+        msg.className = 'success-msg';
+        msg.textContent = '✅ Đã lưu đơn hàng thành công!';
+        window.__scannedPhotoFilename = null; // da luu roi, khong con la "chua luu" nua nen khong can huy khi reset
+        resetForm();
+        loadMyOrders();
+      } catch (err) {
+        msg.className = 'error-msg';
+        msg.textContent = err.message;
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Xác nhận & Lưu đơn hàng';
+      }
+    }
+
+    function resetForm() {
+      // Neu dang co 1 hinh da quet nhung CHUA duoc luu thanh don, huy no tren server truoc
+      if (window.__scannedPhotoFilename) {
+        discardScannedPhoto(window.__scannedPhotoFilename);
+      }
+      selectedFile = null;
+      window.__scannedPhotoFilename = null;
+      window.__scannedOcr = null;
+      document.getElementById('photoInput').value = '';
+      document.getElementById('preview').style.display = 'none';
+      document.getElementById('dropText').innerHTML = '🖼️ Nhấn để chọn ảnh có sẵn<br/><span style="font-size:11px;">(hoặc dán ảnh bằng Ctrl+V — copy từ Zalo, Excel, ảnh chụp màn hình...)</span>';
+      document.getElementById('customerName').value = '';
+      document.getElementById('orderCode').value = '';
+      document.getElementById('note').value = '';
+      document.getElementById('ocrStatus').style.display = 'none';
+      document.getElementById('ocrRawTextWrap').style.display = 'none';
+      document.getElementById('ocrRawText').textContent = '';
+      document.getElementById('submitBtn').disabled = true;
+      document.getElementById('submitBtn').textContent = 'Lưu đơn hàng';
+      document.getElementById('msg').textContent = '';
+      document.getElementById('msg').className = '';
+      document.querySelectorAll('.warehouse-checkbox').forEach((el) => { el.checked = false; });
+      document.getElementById('orderType').value = 'xuat_kho';
+    }
+
+    async function loadWarehouses() {
+      try {
+        const data = await apiFetch('/api/warehouses');
+        const wrap = document.getElementById('warehouseCheckboxes');
+        if (data.warehouses.length === 0) {
+          wrap.innerHTML = '<span class="hint">Chưa có kho nào, liên hệ quản lý để tạo kho.</span>';
+          return;
+        }
+        wrap.innerHTML = data.warehouses
+          .map(
+            (w) => `
+          <label style="display:flex; align-items:center; gap:8px; font-size:15px; color:var(--text); margin:0;">
+            <input type="checkbox" class="warehouse-checkbox" value="${w.id}" style="width:20px; height:20px;" />
+            ${w.name}
+          </label>`
+          )
+          .join('');
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    function toggleOcrRawText(e) {
+      e.preventDefault();
+      const pre = document.getElementById('ocrRawText');
+      pre.style.display = pre.style.display === 'none' ? 'block' : 'none';
+    }
+
+    async function loadMyOrders() {
+      try {
+        const data = await apiFetch('/api/orders?mine=1');
+        const el = document.getElementById('myOrders');
+        if (data.orders.length === 0) {
+          el.innerHTML = '<p class="hint">Chưa có đơn hàng nào.</p>';
+          return;
+        }
+        el.innerHTML = data.orders
+          .slice(0, 5)
+          .map(
+            (o) => `
+          <div class="order-item">
+            <img src="/uploads/${o.order_photo_path}" onclick="event.stopPropagation(); openImageViewer('/uploads/${o.order_photo_path}')" />
+            <div class="info" onclick="openOrderDetail(${o.id})">
+              <div class="name">${orderDisplayName(o)}</div>
+              <div class="meta">
+                <span class="badge ${o.order_type}">${orderTypeLabel(o.order_type)}</span>
+                <span class="badge ${o.status}">${statusLabel(o.status)}</span>
+              </div>
+              <div class="meta">
+                ${(o.warehouses || [])
+                  .map((w) => `${w.warehouse_name}: <span class="badge ${w.status}" style="font-size:10px; padding:2px 6px;">${statusLabel(w.status)}</span>`)
+                  .join(' &nbsp;·&nbsp; ')}
+                &nbsp;·&nbsp; ${formatDateTime(o.created_at)}
+              </div>
+              ${o.note ? `<div class="note-inline">📝 ${o.note}</div>` : ''}
+            </div>
+          </div>`
+          )
+          .join('');
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    let currentDetailOrder = null;
+
+    async function openOrderDetail(id) {
+      const data = await apiFetch(`/api/orders/${id}`);
+      currentDetailOrder = data.order;
+      document.getElementById('modalTitle').textContent = orderDisplayName(data.order);
+
+      const warehousesBreakdown = (data.order.warehouses || [])
+        .map(
+          (w) =>
+            `${w.warehouse_name}: <span class="badge ${w.status}">${statusLabel(w.status)}</span>${w.confirmed_by_username ? ' (bởi ' + w.confirmed_by_username + ')' : ''}`
+        )
+        .join('<br/>');
+
+      const photosHtml = data.photos
+        .map(
+          (p) => `
+        <div>
+          <img src="/uploads/${p.photo_path}" onclick="openImageViewer('/uploads/${p.photo_path}')" />
+          <div class="label">${{ order: 'Đơn gốc', packed: 'Đã giao hàng', return: 'Hàng trả' }[p.type]}${p.warehouse_name ? ' - ' + p.warehouse_name : ''}</div>
+        </div>`
+        )
+        .join('');
+
+      const canDelete = data.order.sales_username === user.username && data.order.status === 'cho_soan';
+
+      document.getElementById('modalContent').innerHTML = `
+        <p class="hint">
+          Loại đơn: <span class="badge ${data.order.order_type}">${orderTypeLabel(data.order.order_type)}</span><br/>
+          Trạng thái chung: <span class="badge ${data.order.status}">${statusLabel(data.order.status)}</span><br/>
+          Tạo lúc: ${formatDateTime(data.order.created_at)}
+        </p>
+        ${data.order.note ? `<div class="note-box">📝 <b>Ghi chú:</b> ${data.order.note}</div>` : ''}
+        <p class="hint">${warehousesBreakdown}</p>
+        <div class="photo-gallery">${photosHtml}</div>
+        ${canDelete ? '<button class="btn danger" onclick="deleteMyOrder()">🗑️ Xoá đơn này (lỡ đăng sai)</button>' : ''}
+        <div id="deleteOrderMsg"></div>
+      `;
+      document.getElementById('modalOverlay').style.display = 'flex';
+    }
+
+    async function deleteMyOrder() {
+      if (!currentDetailOrder) return;
+      if (!confirm(`Xoá đơn hàng "${currentDetailOrder.customer_name}"? Không thể khôi phục lại.`)) return;
+      try {
+        await apiFetch(`/api/orders/${currentDetailOrder.id}`, { method: 'DELETE' });
+        closeModal();
+        loadMyOrders();
+      } catch (err) {
+        document.getElementById('deleteOrderMsg').innerHTML = `<p class="error-msg">${err.message}</p>`;
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('modalOverlay').style.display = 'none';
+    }
+
+    async function loadCustomerSuggestions() {
+      try {
+        const data = await apiFetch('/api/customers');
+        document.getElementById('customerList').innerHTML = data.customers
+          .map((c) => `<option value="${c.name}"></option>`)
+          .join('');
+      } catch (err) {}
+    }
+
+    window.refreshList = loadMyOrders;
+    loadMyOrders();
+    loadCustomerSuggestions();
+    loadWarehouses();
+  </script>
+</body>
+</html>

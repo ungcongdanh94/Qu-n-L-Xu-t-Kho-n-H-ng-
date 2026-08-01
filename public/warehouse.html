@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#1e5f8c" />
+<title>Xử lý kho - Thủ kho</title>
+<link rel="icon" href="/favicon.png?v=3" type="image/png" />
+<link rel="manifest" href="/manifest.json" />
+<link rel="apple-touch-icon" href="/icons/icon-192.png?v=3" />
+<link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div id="topbar"></div>
+  <div id="tabs"></div>
+
+  <div class="container">
+    <div class="card">
+      <h2>📦 Đơn hàng chờ xử lý <span id="warehouseNameLabel" class="hint" style="font-weight:400;"></span></h2>
+
+      <div class="day-nav">
+        <button onclick="shiftDay(-1)">◀</button>
+        <input type="date" id="dayFilter" onchange="loadOrders()" />
+        <button onclick="shiftDay(1)">▶</button>
+        <button class="today-btn" onclick="goToday()">Hôm nay</button>
+      </div>
+
+      <div class="filters">
+        <select id="statusFilter" onchange="loadOrders()">
+          <option value="cho_soan">Chờ soạn hàng</option>
+          <option value="da_soan">Đã giao hàng</option>
+          <option value="co_hang_tra">Có hàng trả</option>
+          <option value="">Tất cả trạng thái</option>
+        </select>
+        <select id="orderTypeFilter" onchange="loadOrders()">
+          <option value="">Tất cả loại đơn</option>
+          <option value="xuat_kho">Xuất kho</option>
+          <option value="nhap_kho">Nhập kho</option>
+        </select>
+        <select id="warehouseFilter" onchange="loadOrders()" style="display:none;"></select>
+      </div>
+      <div id="orderList">Đang tải...</div>
+    </div>
+  </div>
+
+  <!-- Modal xu ly don hang -->
+  <div id="modalOverlay" class="modal-overlay">
+    <div class="card">
+      <h2 id="modalTitle">Xử lý đơn hàng</h2>
+      <div id="modalContent"></div>
+      <button class="btn secondary" onclick="closeModal()">Đóng</button>
+    </div>
+  </div>
+
+  <script src="/js/common.js"></script>
+  <script>
+    document.getElementById('dayFilter').value = todayStr();
+    function shiftDay(delta) {
+      const el = document.getElementById('dayFilter');
+      el.value = addDaysStr(el.value || todayStr(), delta);
+      loadOrders();
+    }
+    function goToday() {
+      document.getElementById('dayFilter').value = todayStr();
+      loadOrders();
+    }
+    const user = requireLogin(['warehouse', 'leader']);
+    document.getElementById('topbar').innerHTML = renderTopbar('Xử lý kho');
+    document.getElementById('tabs').innerHTML = renderNavTabs('warehouse');
+
+    let currentOrder = null;
+
+    async function initWarehouseHeader() {
+      if (user.role === 'warehouse') {
+        document.getElementById('warehouseNameLabel').textContent = user.warehouse_name
+          ? `— ${user.warehouse_name}`
+          : '';
+      } else if (user.role === 'leader') {
+        const data = await apiFetch('/api/warehouses');
+        const select = document.getElementById('warehouseFilter');
+        select.style.display = '';
+        select.innerHTML =
+          '<option value="">Tất cả các kho</option>' +
+          data.warehouses.map((w) => `<option value="${w.id}">${w.name}</option>`).join('');
+      }
+    }
+
+    async function loadOrders() {
+      const status = document.getElementById('statusFilter').value;
+      const warehouseId = document.getElementById('warehouseFilter').value;
+      const orderType = document.getElementById('orderTypeFilter').value;
+      const date = document.getElementById('dayFilter').value;
+      const el = document.getElementById('orderList');
+      el.innerHTML = 'Đang tải...';
+      try {
+        const params = new URLSearchParams();
+        if (status) params.set('status', status);
+        if (warehouseId) params.set('warehouse_id', warehouseId);
+        if (orderType) params.set('order_type', orderType);
+        if (date) params.set('date', date);
+        const data = await apiFetch(`/api/orders?${params.toString()}`);
+        if (data.orders.length === 0) {
+          el.innerHTML = '<p class="hint">Không có đơn hàng nào.</p>';
+          return;
+        }
+        el.innerHTML = data.orders
+          .map((o) => {
+            const displayStatus = user.role === 'warehouse' ? o.my_status : o.status;
+            const warehousesBreakdown = (o.warehouses || [])
+              .map((w) => `${w.warehouse_name}: <span class="badge ${w.status}" style="font-size:10px; padding:2px 6px;">${statusLabel(w.status)}</span>`)
+              .join(' &nbsp;·&nbsp; ');
+            return `
+          <div class="order-item">
+            <img src="/uploads/${o.order_photo_path}" onclick="event.stopPropagation(); openImageViewer('/uploads/${o.order_photo_path}')" />
+            <div class="info" onclick="openOrder(${o.id})">
+              <div class="name">${orderDisplayName(o)}</div>
+              <div class="meta">
+                <span class="badge ${o.order_type}">${orderTypeLabel(o.order_type)}</span>
+                <span class="badge ${displayStatus}">${statusLabel(displayStatus)}</span>
+              </div>
+              <div class="meta">
+                ${warehousesBreakdown} &nbsp;·&nbsp; Sales: ${o.sales_username} &nbsp;·&nbsp; ${formatDateTime(o.created_at)}
+              </div>
+              ${o.note ? `<div class="note-inline">📝 ${o.note}</div>` : ''}
+            </div>
+          </div>`;
+          })
+          .join('');
+      } catch (err) {
+        el.innerHTML = `<p class="error-msg">${err.message}</p>`;
+      }
+    }
+
+    async function openOrder(id) {
+      const data = await apiFetch(`/api/orders/${id}`);
+      currentOrder = data.order;
+      document.getElementById("modalTitle").textContent = `Đơn: ${orderDisplayName(data.order)}`;
+
+      const photosHtml = data.photos
+        .map(
+          (p) => `
+        <div>
+          <img src="/uploads/${p.photo_path}" onclick="openImageViewer('/uploads/${p.photo_path}')" />
+          <div class="label">${{ order: 'Đơn gốc', packed: 'Đã giao hàng', return: 'Hàng trả' }[p.type]}${p.warehouse_name ? ' - ' + p.warehouse_name : ''}</div>
+        </div>`
+        )
+        .join('');
+
+      const warehousesBreakdown = (data.order.warehouses || [])
+        .map((w) => `${w.warehouse_name}: <span class="badge ${w.status}">${statusLabel(w.status)}</span>`)
+        .join('<br/>');
+
+      // Thu kho: luon xac nhan cho dung kho cua minh, khong can chon.
+      // Leader: co the xu ly thay cho bat ky kho nao con "cho soan" trong don nay, nen can chon ro.
+      let warehouseSelectHtml = '';
+      const pendingWarehouses = (data.order.warehouses || []).filter((w) => w.status === 'cho_soan');
+      if (user.role === 'leader' && pendingWarehouses.length > 0) {
+        warehouseSelectHtml = `
+          <label>Xác nhận cho kho</label>
+          <select id="confirmWarehouseId">
+            ${pendingWarehouses.map((w) => `<option value="${w.warehouse_id}">${w.warehouse_name}</option>`).join('')}
+          </select>
+        `;
+      }
+
+      document.getElementById('modalContent').innerHTML = `
+        <p class="hint">
+          Loại đơn: <span class="badge ${data.order.order_type}">${orderTypeLabel(data.order.order_type)}</span>
+          &nbsp; Trạng thái chung: <span class="badge ${data.order.status}">${statusLabel(data.order.status)}</span>
+        </p>
+        ${data.order.note ? `<div class="note-box">📝 <b>Ghi chú:</b> ${data.order.note}</div>` : ''}
+        <p class="hint">${warehousesBreakdown}</p>
+        <div class="photo-gallery">${photosHtml}</div>
+
+        ${warehouseSelectHtml}
+        <label>${data.order.order_type === 'nhap_kho' ? 'Chụp hoặc chọn hình xác nhận đã nhận hàng' : 'Chụp hoặc chọn hình xác nhận đã giao hàng'}</label>
+        <div style="display:flex; gap:8px; margin-top:6px;">
+          <button type="button" class="btn secondary" style="margin:0; flex:1;" onclick="document.getElementById('packedPhotoCamera').click()">📷 Chụp ảnh</button>
+          <button type="button" class="btn secondary" style="margin:0; flex:1;" onclick="document.getElementById('packedPhotoGallery').click()">🖼️ Chọn ảnh có sẵn</button>
+        </div>
+        <input type="file" accept="image/*" capture="environment" id="packedPhotoCamera" style="display:none" onchange="uploadPhoto('packed', this)" />
+        <input type="file" accept="image/*" id="packedPhotoGallery" style="display:none" onchange="uploadPhoto('packed', this)" />
+
+        <label style="margin-top:16px;">Hoặc chụp/chọn hình khách trả hàng</label>
+        <div style="display:flex; gap:8px; margin-top:6px;">
+          <button type="button" class="btn secondary" style="margin:0; flex:1;" onclick="document.getElementById('returnPhotoCamera').click()">📷 Chụp ảnh</button>
+          <button type="button" class="btn secondary" style="margin:0; flex:1;" onclick="document.getElementById('returnPhotoGallery').click()">🖼️ Chọn ảnh có sẵn</button>
+        </div>
+        <input type="file" accept="image/*" capture="environment" id="returnPhotoCamera" style="display:none" onchange="uploadPhoto('return', this)" />
+        <input type="file" accept="image/*" id="returnPhotoGallery" style="display:none" onchange="uploadPhoto('return', this)" />
+
+        <div id="uploadMsg"></div>
+      `;
+      document.getElementById('modalOverlay').style.display = 'flex';
+    }
+
+    async function uploadPhoto(type, inputEl) {
+      const file = inputEl.files[0];
+      if (!file || !currentOrder) return;
+      const msg = document.getElementById('uploadMsg');
+      msg.className = 'hint';
+      msg.innerHTML = '<span class="spinner" style="border-top-color:var(--primary); border-color:rgba(30,95,140,0.3);"></span>Đang tải hình lên...';
+
+      const form = new FormData();
+      form.append('photo', file);
+      form.append('type', type);
+      const warehouseSelectEl = document.getElementById('confirmWarehouseId');
+      if (warehouseSelectEl) form.append('warehouse_id', warehouseSelectEl.value);
+
+      try {
+        await apiFetch(`/api/orders/${currentOrder.id}/photos`, { method: 'POST', body: form });
+        msg.className = 'success-msg';
+        msg.textContent = '✅ Đã cập nhật thành công!';
+        loadOrders();
+        setTimeout(() => openOrder(currentOrder.id), 600);
+      } catch (err) {
+        msg.className = 'error-msg';
+        msg.textContent = err.message;
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('modalOverlay').style.display = 'none';
+      currentOrder = null;
+    }
+
+    window.refreshList = loadOrders;
+    initWarehouseHeader().then(loadOrders);
+  </script>
+</body>
+</html>
