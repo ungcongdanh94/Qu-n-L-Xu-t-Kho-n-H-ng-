@@ -23,6 +23,7 @@
         <input type="date" id="dayFilter" onchange="loadOrders()" />
         <button onclick="shiftDay(1)">▶</button>
         <button class="today-btn" onclick="goToday()">Hôm nay</button>
+        <button class="today-btn" onclick="clearDay()">Tất cả ngày</button>
       </div>
 
       <div class="filters">
@@ -54,7 +55,6 @@
 
   <script src="/js/common.js"></script>
   <script>
-    document.getElementById('dayFilter').value = todayStr();
     function shiftDay(delta) {
       const el = document.getElementById('dayFilter');
       el.value = addDaysStr(el.value || todayStr(), delta);
@@ -62,6 +62,10 @@
     }
     function goToday() {
       document.getElementById('dayFilter').value = todayStr();
+      loadOrders();
+    }
+    function clearDay() {
+      document.getElementById('dayFilter').value = '';
       loadOrders();
     }
     const user = requireLogin(['warehouse', 'leader']);
