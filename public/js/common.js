@@ -6,6 +6,42 @@ if ('serviceWorker' in navigator) {
   navigator.serviceWorker.register('/sw.js').catch(() => {});
 }
 
+// ==== Tu dong phat hien khi server co ban moi (sau khi deploy) va tu tai lai trang ====
+// Giai quyet triet de van de dien thoai/may tinh "cache" lai giao dien cu: khong can ai phai
+// vao cai dat xoa cache bang tay - app tu kiem tra ngam va tu lam moi khi phat hien co thay doi.
+(function watchAppVersion() {
+  const STORAGE_KEY = 'appVersionSeen';
+
+  async function checkVersion() {
+    try {
+      const res = await fetch('/api/app-version', { cache: 'no-store' });
+      const data = await res.json();
+      const seen = sessionStorage.getItem(STORAGE_KEY);
+      if (seen && seen !== data.version) {
+        // Neu dang go dang cai gi do (o nhap co noi dung dang duoc focus), hoan lai viec tai
+        // trang sang lan kiem tra sau, tranh lam mat noi dung dang nhap chua luu.
+        const activeEl = document.activeElement;
+        const isActivelyEditing =
+          activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA') && activeEl.value;
+        if (isActivelyEditing) return;
+
+        sessionStorage.setItem(STORAGE_KEY, data.version);
+        window.location.reload();
+        return;
+      }
+      sessionStorage.setItem(STORAGE_KEY, data.version);
+    } catch (err) {
+      // Mat mang tam thoi hoac loi khac - bo qua, thu lai o lan kiem tra sau
+    }
+  }
+
+  checkVersion();
+  setInterval(checkVersion, 3 * 60 * 1000); // kiem tra dinh ky moi 3 phut khi app dang mo
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') checkVersion();
+  });
+})();
+
 function getToken() {
   return localStorage.getItem('token');
 }
@@ -32,14 +68,20 @@ function logout() {
 
 // Bao ve trang: neu chua dang nhap thi day ve trang login.
 // Neu truyen allowedRoles, kiem tra luon quyen truy cap.
-function requireLogin(allowedRoles) {
+function hasUserPermission(user, permission) {
+  return !!(user && Array.isArray(user.permissions) && user.permissions.includes(permission));
+}
+
+function requireLogin(allowedRoles, requiredPermission) {
   const token = getToken();
   const user = getUser();
   if (!token || !user) {
     window.location.href = '/login.html';
     return null;
   }
-  if (allowedRoles && !allowedRoles.includes(user.role)) {
+  const roleOk = !allowedRoles || allowedRoles.includes(user.role);
+  const permOk = requiredPermission && hasUserPermission(user, requiredPermission);
+  if (!roleOk && !permOk) {
     alert('Ban khong co quyen truy cap trang nay.');
     window.location.href = '/index.html';
     return null;
@@ -445,8 +487,10 @@ function renderNavTabs(active) {
     tabs.push({ href: '/warehouse.html', label: 'Xử lý kho', icon: '📦', key: 'warehouse' });
   }
   tabs.push({ href: '/returns.html', label: 'Hàng trả', icon: '↩️', key: 'returns' });
-  if (user.role === 'leader') {
+  if (user.role === 'leader' || hasUserPermission(user, 'view_all')) {
     tabs.push({ href: '/dashboard.html', label: 'Tổng quan', icon: '📊', key: 'dashboard' });
+  }
+  if (user.role === 'leader' || hasUserPermission(user, 'manage_admin')) {
     tabs.push({ href: '/users.html', label: 'Tài khoản', icon: '👥', key: 'users' });
   }
   return `

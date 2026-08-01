@@ -20,6 +20,11 @@ const backupRoutes = require('./routes/backup');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Dung de client tu phat hien khi server da duoc deploy len ban moi (xem public/js/common.js),
+// tu do tu dong tai lai trang - khong can ai phai vao cai dat xoa cache bang tay nua.
+const SERVER_START_TIME = Date.now().toString();
+app.get('/api/app-version', (req, res) => res.json({ version: SERVER_START_TIME }));
+
 app.use(express.json({ limit: '2mb' }));
 
 // Phuc vu hinh anh da upload. Luu y: ten file la chuoi ngau nhien kho doan (xem routes/orders.js),

@@ -2,7 +2,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const db = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, hasPermission } = require('../middleware/auth');
 const { runOcr } = require('../ocr');
 const { broadcast } = require('../sse');
 const { sendPushToUsers, getRelevantUserIds } = require('../push');
@@ -299,7 +299,9 @@ router.get('/', requireAuth, (req, res) => {
   const params = [];
   let sql;
 
-  if (req.user.role === 'warehouse') {
+  const isWarehouseScoped = req.user.role === 'warehouse' && !hasPermission(req.user.id, 'view_all');
+
+  if (isWarehouseScoped) {
     // Thu kho: chi xem don co gan kho cua minh, va loc theo TRANG THAI RIENG cua kho ho
     // (khong phai trang thai tong hop cua ca don, vi don co the con kho khac chua xong)
     sql = `
@@ -377,16 +379,18 @@ router.get('/:id', requireAuth, (req, res) => {
   res.json({ order, photos });
 });
 
-// ============ QUAN LY: xoa don hang (xoa luon hinh anh lien quan tren dia) ============
-router.delete('/:id', requireAuth, requireRole('leader', 'sales'), (req, res) => {
+// ============ Xoa don hang (xoa luon hinh anh lien quan tren dia) ============
+router.delete('/:id', requireAuth, requireRole('leader', 'sales', 'warehouse'), (req, res) => {
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!order) return res.status(404).json({ error: 'Khong tim thay don hang.' });
 
-  // Sales chi duoc xoa DUNG don cua chinh minh, va CHI KHI don chua duoc kho xu ly gi
-  // (con "cho soan hang") - tranh xoa nham don da co thu kho lam viec, gay roi cho kho.
-  if (req.user.role === 'sales') {
-    if (order.sales_user_id !== req.user.id) {
-      return res.status(403).json({ error: 'Ban chi co the xoa don hang do chinh minh tao.' });
+  const canDeleteAny = req.user.role === 'leader' || hasPermission(req.user.id, 'delete_any_order');
+
+  if (!canDeleteAny) {
+    // Sales/thu kho thuong: chi duoc xoa DUNG don cua chinh minh tao, va CHI KHI don chua duoc
+    // kho xu ly gi (con "cho soan hang") - tranh xoa nham don da co thu kho lam viec, gay roi cho kho.
+    if (req.user.role !== 'sales' || order.sales_user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Ban khong co quyen xoa don hang nay.' });
     }
     if (order.status !== 'cho_soan') {
       return res.status(400).json({

@@ -1,23 +1,38 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
 const db = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, requireRoleOrPermission, PERMISSIONS } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Tat ca route trong file nay chi danh cho quan ly (leader)
-router.use(requireAuth, requireRole('leader'));
+// Danh sach cac quyen rieng co the cap - de giao dien lay ra hien thi
+router.get('/permissions-list', requireAuth, requireRole('leader'), (req, res) => {
+  res.json({ permissions: PERMISSIONS });
+});
+
+// Cac route con lai: cho leader, hoac nguoi duoc cap rieng quyen "manage_admin"
+router.use(requireAuth, requireRoleOrPermission('manage_admin', 'leader'));
 
 router.get('/', (req, res) => {
   const users = db
     .prepare(
-      `SELECT u.id, u.username, u.full_name, u.role, u.warehouse_id, u.is_active, u.created_at,
+      `SELECT u.id, u.username, u.full_name, u.role, u.warehouse_id, u.is_active, u.permissions, u.created_at,
               w.name AS warehouse_name
        FROM users u LEFT JOIN warehouses w ON w.id = u.warehouse_id
        ORDER BY u.created_at DESC`
     )
     .all();
-  res.json({ users });
+  const parsed = users.map((u) => ({
+    ...u,
+    permissions: (() => {
+      try {
+        return JSON.parse(u.permissions || '[]');
+      } catch (err) {
+        return [];
+      }
+    })(),
+  }));
+  res.json({ users: parsed });
 });
 
 router.post('/', (req, res) => {
@@ -51,7 +66,7 @@ router.post('/', (req, res) => {
 });
 
 router.patch('/:id', (req, res) => {
-  const { full_name, role, warehouse_id, is_active, new_password } = req.body || {};
+  const { full_name, role, warehouse_id, is_active, new_password, permissions } = req.body || {};
   const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.params.id);
   if (!user) return res.status(404).json({ error: 'Khong tim thay tai khoan.' });
 
@@ -80,14 +95,32 @@ router.patch('/:id', (req, res) => {
     updates.push('password_hash = ?');
     params.push(bcrypt.hashSync(new_password, 10));
   }
+  // Chi QUAN LY THAT (role = leader) moi duoc cap/go quyen rieng cho nguoi khac -
+  // tranh truong hop nguoi chi duoc uy quyen "manage_admin" tu cap them quyen cho minh/nguoi khac.
+  if (Array.isArray(permissions)) {
+    if (req.user.role !== 'leader') {
+      return res.status(403).json({ error: 'Chi quan ly moi duoc cap/go quyen rieng cho nguoi khac.' });
+    }
+    const validKeys = Object.keys(PERMISSIONS);
+    const cleaned = permissions.filter((p) => validKeys.includes(p));
+    updates.push('permissions = ?');
+    params.push(JSON.stringify(cleaned));
+  }
   if (updates.length === 0) return res.status(400).json({ error: 'Khong co gi de cap nhat.' });
 
   params.push(req.params.id);
   db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
   const updated = db
-    .prepare('SELECT id, username, full_name, role, warehouse_id, is_active, created_at FROM users WHERE id = ?')
+    .prepare('SELECT id, username, full_name, role, warehouse_id, is_active, permissions, created_at FROM users WHERE id = ?')
     .get(req.params.id);
+  updated.permissions = (() => {
+    try {
+      return JSON.parse(updated.permissions || '[]');
+    } catch (err) {
+      return [];
+    }
+  })();
   res.json({ user: updated });
 });
 

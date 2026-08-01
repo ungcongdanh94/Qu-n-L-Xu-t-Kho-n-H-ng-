@@ -82,7 +82,7 @@
 
   <script src="/js/common.js"></script>
   <script>
-    const user = requireLogin(['leader']);
+    const user = requireLogin(['leader'], 'manage_admin');
 
     async function downloadBackup() {
       const msg = document.getElementById('exportMsg');
@@ -151,6 +151,7 @@
 
     let warehouses = [];
     let editingUserId = null;
+    let permissionsList = null;
 
     async function loadWarehouses() {
       const data = await apiFetch('/api/warehouses');
@@ -261,6 +262,12 @@
       }
     }
 
+    const PERMISSION_SHORT_LABELS = {
+      view_all: '📊 Xem tổng quan',
+      delete_any_order: '🗑️ Xoá mọi đơn',
+      manage_admin: '👥 Quản trị',
+    };
+
     async function loadUsers() {
       const el = document.getElementById('userList');
       el.innerHTML = 'Đang tải...';
@@ -276,6 +283,11 @@
                 @${u.username} &nbsp;·&nbsp; ${roleLabel(u.role)}
                 ${u.warehouse_name ? ' · ' + u.warehouse_name : ''}
               </div>
+              ${
+                (u.permissions || []).length > 0
+                  ? `<div class="meta">${u.permissions.map((p) => `<span class="note-inline" style="margin-right:4px;">${PERMISSION_SHORT_LABELS[p] || p}</span>`).join('')}</div>`
+                  : ''
+              }
             </div>
           </div>`
           )
@@ -295,6 +307,34 @@
         (w) => `<option value="${w.id}" ${w.id === u.warehouse_id ? 'selected' : ''}>${w.name}</option>`
       ).join('');
 
+      let permissionsHtml = '';
+      if (user.role === 'leader') {
+        if (!permissionsList) {
+          try {
+            const permData = await apiFetch('/api/users/permissions-list');
+            permissionsList = permData.permissions;
+          } catch (err) {
+            permissionsList = {};
+          }
+        }
+        const userPerms = u.permissions || [];
+        permissionsHtml = `
+          <label style="margin-top:20px;">Quyền riêng (chỉ Quản lý mới cấp/gỡ được)</label>
+          <div style="display:flex; flex-direction:column; gap:8px; margin-top:6px;">
+            ${Object.entries(permissionsList)
+              .map(
+                ([key, label]) => `
+              <label style="display:flex; align-items:center; gap:8px; font-size:14px; color:var(--text); margin:0;">
+                <input type="checkbox" class="perm-checkbox" value="${key}" ${userPerms.includes(key) ? 'checked' : ''} style="width:18px; height:18px; margin:0;" />
+                ${label}
+              </label>`
+              )
+              .join('')}
+          </div>
+          <p class="hint">Quyền riêng có hiệu lực cho mọi vai trò, dùng khi cần cấp thêm quyền cho 1 người cụ thể mà không muốn đổi hẳn vai trò của họ.</p>
+        `;
+      }
+
       document.getElementById('editContent').innerHTML = `
         <label>Họ tên</label>
         <input type="text" id="editFullName" value="${u.full_name}" />
@@ -311,6 +351,8 @@
 
         <label>Đặt lại mật khẩu (bỏ trống nếu không đổi)</label>
         <input type="text" id="editPassword" placeholder="Mật khẩu mới..." />
+
+        ${permissionsHtml}
 
         <button class="btn" onclick="saveEdit()">Lưu thay đổi</button>
         <button class="btn ${u.is_active ? 'danger' : ''}" onclick="toggleActive(${u.is_active ? 'false' : 'true'})">
@@ -336,10 +378,15 @@
       const new_password = document.getElementById('editPassword').value;
       const msg = document.getElementById('editMsg');
 
+      const body = { full_name, role, warehouse_id, new_password: new_password || undefined };
+      if (user.role === 'leader') {
+        body.permissions = Array.from(document.querySelectorAll('.perm-checkbox:checked')).map((el) => el.value);
+      }
+
       try {
         await apiFetch(`/api/users/${editingUserId}`, {
           method: 'PATCH',
-          body: JSON.stringify({ full_name, role, warehouse_id, new_password: new_password || undefined }),
+          body: JSON.stringify(body),
         });
         msg.className = 'success-msg';
         msg.textContent = '✅ Đã lưu thay đổi.';

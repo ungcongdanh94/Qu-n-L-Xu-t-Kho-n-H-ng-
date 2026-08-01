@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS users (
   role TEXT NOT NULL CHECK(role IN ('sales','warehouse','leader')),
   warehouse_id INTEGER,
   is_active INTEGER NOT NULL DEFAULT 1,
+  permissions TEXT NOT NULL DEFAULT '[]',
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (warehouse_id) REFERENCES warehouses(id)
 );
@@ -140,6 +141,9 @@ if (!columnExists('orders', 'order_type')) {
 }
 if (!columnExists('orders', 'order_code')) {
   db.exec('ALTER TABLE orders ADD COLUMN order_code TEXT');
+}
+if (!columnExists('users', 'permissions')) {
+  db.exec("ALTER TABLE users ADD COLUMN permissions TEXT NOT NULL DEFAULT '[]'");
 }
 if (!columnExists('order_photos', 'warehouse_id')) {
   db.exec('ALTER TABLE order_photos ADD COLUMN warehouse_id INTEGER REFERENCES warehouses(id)');

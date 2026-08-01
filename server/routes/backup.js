@@ -6,7 +6,7 @@ const archiver = require('archiver');
 const AdmZip = require('adm-zip');
 const multer = require('multer');
 const db = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, requireRoleOrPermission } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -20,7 +20,7 @@ const backupUpload = multer({
 });
 
 // ============ Tai file sao luu ve may (database + toan bo hinh anh) ============
-router.get('/export', requireAuth, requireRole('leader'), async (req, res) => {
+router.get('/export', requireAuth, requireRoleOrPermission('manage_admin', 'leader'), async (req, res) => {
   const tmpDbPath = path.join(os.tmpdir(), `backup-${Date.now()}.db`);
   try {
     // Dung API backup chinh thuc cua SQLite (thong qua better-sqlite3) de tao ban sao

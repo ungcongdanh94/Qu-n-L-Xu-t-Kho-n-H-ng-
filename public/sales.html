@@ -341,7 +341,9 @@
         )
         .join('');
 
-      const canDelete = data.order.sales_username === user.username && data.order.status === 'cho_soan';
+      const canDelete =
+        (data.order.sales_username === user.username && data.order.status === 'cho_soan') ||
+        hasUserPermission(user, 'delete_any_order');
 
       document.getElementById('modalContent').innerHTML = `
         <p class="hint">

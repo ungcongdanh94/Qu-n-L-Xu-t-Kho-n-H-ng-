@@ -226,3 +226,13 @@ Trước đây, ngay khi chọn/chụp hình là đơn hàng đã được tạo
 - Nút **"↺ Làm lại"** bên cạnh: xoá hình vừa chọn, dọn dẹp file tạm trên server, đưa form về trạng thái ban đầu — dùng khi lỡ chụp/chọn nhầm hình trước khi lưu.
 
 Nhờ vậy, nếu sales chụp thử/xem trước rồi đổi ý, hệ thống sẽ không còn tạo ra các đơn hàng rác/dở dang nữa.
+
+## 16. Phân quyền chi tiết theo từng người (nâng cao)
+
+Ngoài 3 vai trò cố định (Sales / Thủ kho / Quản lý), Quản lý (leader) có thể **cấp thêm quyền riêng cho từng người cụ thể** mà không cần đổi hẳn vai trò của họ. Vào **Quản lý tài khoản** → bấm vào 1 tài khoản → cuối form sẽ có mục **"Quyền riêng"** (chỉ Quản lý mới thấy mục này):
+
+- **📊 Xem tổng quan** — cho phép người này vào xem trang Tổng quan như quản lý (xem toàn bộ đơn hàng mọi kho).
+- **🗑️ Xoá mọi đơn** — cho phép xoá bất kỳ đơn hàng nào, không chỉ đơn do chính mình tạo và còn "chờ soạn hàng".
+- **👥 Quản trị** — cho phép vào trang Quản lý tài khoản (tạo/sửa tài khoản, quản lý kho, tải file sao lưu). Vì lý do an toàn, riêng việc **khôi phục** dữ liệu (ghi đè toàn bộ) vẫn luôn giữ riêng cho Quản lý thật, không cấp được qua quyền này.
+
+**Lưu ý an toàn quan trọng:** chỉ tài khoản có vai trò **Quản lý (leader) thật** mới được cấp/gỡ các quyền riêng này cho người khác — một người chỉ được cấp quyền "Quản trị" sẽ không tự cấp thêm quyền cho mình hoặc người khác được, tránh tình trạng tự leo thang quyền.

@@ -1,6 +1,15 @@
 const jwt = require('jsonwebtoken');
+const db = require('../db');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'thay-doi-chuoi-nay-trong-file-env';
+
+// Danh sach cac quyen rieng co the cap them cho tung nguoi (khong phu thuoc vai tro co dinh).
+// Dinh nghia tap trung o day de dung chung giua backend va giao dien quan ly tai khoan.
+const PERMISSIONS = {
+  view_all: 'Xem Tổng quan toàn hệ thống (như quản lý)',
+  delete_any_order: 'Xoá được mọi đơn hàng (không chỉ đơn của mình)',
+  manage_admin: 'Quản lý tài khoản, kho, và sao lưu dữ liệu (như quản lý)',
+};
 
 function requireAuth(req, res, next) {
   const header = req.headers.authorization || '';
@@ -26,4 +35,28 @@ function requireRole(...roles) {
   };
 }
 
-module.exports = { requireAuth, requireRole, JWT_SECRET };
+// Kiem tra 1 nguoi dung (theo id) co duoc cap 1 quyen rieng cu the hay khong.
+// Luon doc truc tiep tu database (khong dua vao JWT) de thay doi quyen co hieu luc ngay,
+// khong can nguoi dung phai dang xuat/dang nhap lai.
+function hasPermission(userId, permission) {
+  const row = db.prepare('SELECT permissions FROM users WHERE id = ?').get(userId);
+  if (!row || !row.permissions) return false;
+  try {
+    const perms = JSON.parse(row.permissions);
+    return Array.isArray(perms) && perms.includes(permission);
+  } catch (err) {
+    return false;
+  }
+}
+
+// Cho qua neu vai tro nam trong danh sach roles, HOAC nguoi dung duoc cap rieng quyen permission do.
+function requireRoleOrPermission(permission, ...roles) {
+  return (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'Chua dang nhap.' });
+    if (roles.includes(req.user.role)) return next();
+    if (hasPermission(req.user.id, permission)) return next();
+    return res.status(403).json({ error: 'Ban khong co quyen thuc hien thao tac nay.' });
+  };
+}
+
+module.exports = { requireAuth, requireRole, requireRoleOrPermission, hasPermission, PERMISSIONS, JWT_SECRET };

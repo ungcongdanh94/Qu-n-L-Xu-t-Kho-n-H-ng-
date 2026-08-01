@@ -61,7 +61,7 @@
 
   <script src="/js/common.js"></script>
   <script>
-    const user = requireLogin(['leader']);
+    const user = requireLogin(['leader'], 'view_all');
     document.getElementById('topbar').innerHTML = renderTopbar('Tổng quan');
     document.getElementById('tabs').innerHTML = renderNavTabs('dashboard');
     document.getElementById('dayFilter').value = todayStr();
@@ -191,7 +191,7 @@
         ${data.order.note ? `<div class="note-box">📝 <b>Ghi chú:</b> ${data.order.note}</div>` : ''}
         <p class="hint">${warehousesBreakdown}</p>
         <div class="photo-gallery">${photosHtml}</div>
-        <button class="btn danger" onclick="deleteCurrentOrder()">🗑️ Xoá đơn hàng này</button>
+        ${user.role === 'leader' || hasUserPermission(user, 'delete_any_order') ? '<button class="btn danger" onclick="deleteCurrentOrder()">🗑️ Xoá đơn hàng này</button>' : ''}
         <div id="deleteMsg"></div>
       `;
       document.getElementById('modalOverlay').style.display = 'flex';

@@ -1,6 +1,6 @@
 const express = require('express');
 const db = require('../db');
-const { requireAuth, requireRole } = require('../middleware/auth');
+const { requireAuth, requireRole, requireRoleOrPermission } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -13,7 +13,7 @@ router.get('/', requireAuth, (req, res) => {
 });
 
 // Chi quan ly (leader) moi duoc tao kho moi
-router.post('/', requireAuth, requireRole('leader'), (req, res) => {
+router.post('/', requireAuth, requireRoleOrPermission('manage_admin', 'leader'), (req, res) => {
   const name = (req.body.name || '').trim();
   if (!name) return res.status(400).json({ error: 'Vui long nhap ten kho.' });
   try {
@@ -29,7 +29,7 @@ router.post('/', requireAuth, requireRole('leader'), (req, res) => {
 });
 
 // Vo hieu hoa 1 kho (khong xoa, chi an di de khong lam mat lich su don hang cu)
-router.patch('/:id', requireAuth, requireRole('leader'), (req, res) => {
+router.patch('/:id', requireAuth, requireRoleOrPermission('manage_admin', 'leader'), (req, res) => {
   const { name, is_active } = req.body || {};
   const updates = [];
   const params = [];
@@ -50,7 +50,7 @@ router.patch('/:id', requireAuth, requireRole('leader'), (req, res) => {
 
 // Xoa kho (chi leader) - chi cho xoa neu kho khong con du lieu lien quan (don hang, phieu tra hang,
 // tai khoan nhan vien dang gan vao kho nay), de tranh mat lich su hoac gay loi du lieu mo coi.
-router.delete('/:id', requireAuth, requireRole('leader'), (req, res) => {
+router.delete('/:id', requireAuth, requireRoleOrPermission('manage_admin', 'leader'), (req, res) => {
   const warehouse = db.prepare('SELECT * FROM warehouses WHERE id = ?').get(req.params.id);
   if (!warehouse) return res.status(404).json({ error: 'Khong tim thay kho.' });
 

@@ -21,6 +21,12 @@ router.post('/login', (req, res) => {
   const warehouse = user.warehouse_id
     ? db.prepare('SELECT * FROM warehouses WHERE id = ?').get(user.warehouse_id)
     : null;
+  let permissions = [];
+  try {
+    permissions = JSON.parse(user.permissions || '[]');
+  } catch (err) {
+    permissions = [];
+  }
   const payload = {
     id: user.id,
     username: user.username,
@@ -28,6 +34,7 @@ router.post('/login', (req, res) => {
     full_name: user.full_name,
     warehouse_id: user.warehouse_id || null,
     warehouse_name: warehouse ? warehouse.name : null,
+    permissions,
   };
   const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '30d' });
   res.json({ token, user: payload });

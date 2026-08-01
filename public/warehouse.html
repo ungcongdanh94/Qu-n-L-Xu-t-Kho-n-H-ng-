@@ -194,8 +194,22 @@
         <input type="file" accept="image/*" id="returnPhotoGallery" style="display:none" onchange="uploadPhoto('return', this)" />
 
         <div id="uploadMsg"></div>
+
+        ${user.role === 'leader' || hasUserPermission(user, 'delete_any_order') ? '<button class="btn danger" style="margin-top:16px;" onclick="deleteCurrentOrderWarehouse()">🗑️ Xoá đơn hàng này</button><div id="deleteMsgWarehouse"></div>' : ''}
       `;
       document.getElementById('modalOverlay').style.display = 'flex';
+    }
+
+    async function deleteCurrentOrderWarehouse() {
+      if (!currentOrder) return;
+      if (!confirm(`Xoá đơn hàng "${orderDisplayName(currentOrder)}"? Không thể khôi phục lại.`)) return;
+      try {
+        await apiFetch(`/api/orders/${currentOrder.id}`, { method: 'DELETE' });
+        closeModal();
+        loadOrders();
+      } catch (err) {
+        document.getElementById('deleteMsgWarehouse').innerHTML = `<p class="error-msg">${err.message}</p>`;
+      }
     }
 
     async function uploadPhoto(type, inputEl) {
