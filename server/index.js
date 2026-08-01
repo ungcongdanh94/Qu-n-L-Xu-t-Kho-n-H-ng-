@@ -38,8 +38,19 @@ app.use('/api/events', eventsRoutes);
 app.use('/api/push', pushRoutes);
 app.use('/api/backup', backupRoutes);
 
-// Frontend tinh (HTML/JS thuan, khong can build)
-app.use(express.static(path.join(__dirname, '..', 'public')));
+// Frontend tinh (HTML/JS thuan, khong can build).
+// Dat Cache-Control: no-cache cho HTML/JS/CSS de trinh duyet LUON kiem tra lai ban moi nhat
+// tren server moi lan tai trang, tranh tinh trang cai/cap nhat code moi roi nhung dien thoai
+// van hien giao dien/logic cu do bi cache lai (van con hop le hien anh/icon tinh nhu binh thuong).
+app.use(
+  express.static(path.join(__dirname, '..', 'public'), {
+    setHeaders: (res, filePath) => {
+      if (/\.(html|js|css)$/.test(filePath)) {
+        res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+      }
+    },
+  })
+);
 
 // Xu ly loi chung (vi du: multer bao loi file qua lon / sai dinh dang)
 app.use((err, req, res, next) => {
