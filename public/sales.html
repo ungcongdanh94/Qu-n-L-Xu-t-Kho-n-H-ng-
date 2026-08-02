@@ -299,13 +299,11 @@
               <div class="name">${orderDisplayName(o)}</div>
               <div class="meta">
                 <span class="badge ${o.order_type}">${orderTypeLabel(o.order_type)}</span>
-                <span class="badge ${o.status}">${statusLabel(o.status)}</span>
+                <span class="badge ${o.status}">${statusLabel(o.status, o.order_type)}</span>
               </div>
-              <div class="meta">
-                ${(o.warehouses || [])
-                  .map((w) => `${w.warehouse_name}: <span class="badge ${w.status}" style="font-size:10px; padding:2px 6px;">${statusLabel(w.status)}</span>`)
-                  .join(' &nbsp;·&nbsp; ')}
-                &nbsp;·&nbsp; ${formatDateTime(o.created_at)}
+              ${renderWarehouseChips(o.warehouses, o.order_type)}
+              <div class="meta" style="margin-top:6px;">
+                ${formatDateTime(o.created_at)}
               </div>
               ${o.note ? `<div class="note-inline">📝 ${o.note}</div>` : ''}
             </div>
@@ -324,12 +322,7 @@
       currentDetailOrder = data.order;
       document.getElementById('modalTitle').textContent = orderDisplayName(data.order);
 
-      const warehousesBreakdown = (data.order.warehouses || [])
-        .map(
-          (w) =>
-            `${w.warehouse_name}: <span class="badge ${w.status}">${statusLabel(w.status)}</span>${w.confirmed_by_username ? ' (bởi ' + w.confirmed_by_username + ')' : ''}`
-        )
-        .join('<br/>');
+      const warehousesBreakdown = renderWarehouseChips(data.order.warehouses, data.order.order_type);
 
       const photosHtml = data.photos
         .map(
@@ -349,11 +342,11 @@
       document.getElementById('modalContent').innerHTML = `
         <p class="hint">
           Loại đơn: <span class="badge ${data.order.order_type}">${orderTypeLabel(data.order.order_type)}</span><br/>
-          Trạng thái chung: <span class="badge ${data.order.status}">${statusLabel(data.order.status)}</span><br/>
+          Trạng thái chung: <span class="badge ${data.order.status}">${statusLabel(data.order.status, data.order.order_type)}</span><br/>
           Tạo lúc: ${formatDateTime(data.order.created_at)}
         </p>
         ${data.order.note ? `<div class="note-box">📝 <b>Ghi chú:</b> ${data.order.note}</div>` : ''}
-        <p class="hint">${warehousesBreakdown}</p>
+        ${warehousesBreakdown}
         <div class="photo-gallery">${photosHtml}</div>
         <div style="display:flex; gap:10px; margin-top:10px;">
           ${canEdit ? '<button class="btn secondary" style="margin:0; flex:1;" onclick="startEditOrder(' + data.order.id + ')">✏️ Sửa đơn</button>' : ''}

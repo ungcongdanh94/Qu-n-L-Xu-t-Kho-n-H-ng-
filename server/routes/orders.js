@@ -375,6 +375,7 @@ router.post(
     broadcast('order_updated', {
       order_id: order.id,
       customer_name: updatedOrder.customer_name,
+      order_type: updatedOrder.order_type,
       warehouse_id: warehouseId,
       warehouse_status: newOwStatus,
       overall_status: aggregateStatus,
@@ -382,9 +383,15 @@ router.post(
       updated_by: req.user.username,
     });
 
+    const statusText =
+      newOwStatus === 'co_hang_tra'
+        ? 'Có hàng trả'
+        : updatedOrder.order_type === 'nhap_kho'
+        ? 'Đã nhập hàng'
+        : 'Đã giao hàng';
     sendPushToUsers([updatedOrder.sales_user_id], {
       title: '📦 Đơn hàng cập nhật',
-      body: `${updatedOrder.customer_name}: ${newOwStatus === 'co_hang_tra' ? 'Có hàng trả' : 'Đã giao hàng'}`,
+      body: `${updatedOrder.customer_name}: ${statusText}`,
       url: '/sales.html',
     }).catch((err) => console.error('[push] Loi:', err.message));
 

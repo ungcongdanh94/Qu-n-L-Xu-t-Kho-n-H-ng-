@@ -122,7 +122,14 @@ async function apiFetch(url, options = {}) {
 function roleLabel(role) {
   return { sales: 'Sales', warehouse: 'Thủ kho', leader: 'Quản lý' }[role] || role;
 }
-function statusLabel(status) {
+// Nhan hien thi cho 1 trang thai. orderType (tuy chon): khi la 'nhap_kho', doi cach goi cho dung
+// ngu canh nhap hang (Cho nhap hang / Da nhap hang) thay vi soan/giao hang cua xuat kho.
+// Khong truyen orderType (hoac 'xuat_kho') -> giu nguyen nhu cu. Dung cho ca trang thai phieu tra hang.
+function statusLabel(status, orderType) {
+  if (orderType === 'nhap_kho') {
+    if (status === 'cho_soan') return 'Chờ nhập hàng';
+    if (status === 'da_soan') return 'Đã nhập hàng';
+  }
   return {
     cho_soan: 'Chờ soạn hàng',
     da_soan: 'Đã giao hàng',
@@ -144,6 +151,21 @@ function orderDisplayName(order) {
 
 function orderTypeLabel(type) {
   return { xuat_kho: 'Xuất kho', nhap_kho: 'Nhập kho' }[type] || type;
+}
+
+// Hien thi kho nhan don hang duoi dang "chip" noi bat (nen xanh nhat, chu dam) kem trang thai
+// rieng cua tung kho - de sales/thu kho nhin vao la thay ro ngay don nay thuoc kho nao,
+// khong phai doc chu nho lan trong dong meta nhu truoc. Dung chung cho danh sach va chi tiet don.
+function renderWarehouseChips(warehouses, orderType) {
+  if (!warehouses || warehouses.length === 0) return '';
+  return `<div class="warehouse-chip-row">${warehouses
+    .map(
+      (w) =>
+        `<span class="warehouse-chip">🏢 ${w.warehouse_name}<span class="badge ${w.status}">${statusLabel(w.status, orderType)}</span>${
+          w.confirmed_by_username ? `<span style="font-weight:400; opacity:0.75;">(bởi ${w.confirmed_by_username})</span>` : ''
+        }</span>`
+    )
+    .join('')}</div>`;
 }
 
 // Kiem tra 1 nguoi dung co duoc sua thong tin 1 don hang khong (khop voi logic phia server
@@ -375,7 +397,7 @@ function connectRealtime() {
   __sseConnection.addEventListener('order_updated', (e) => {
     const data = JSON.parse(e.data);
     if (hasUserRole(user, 'sales') && data.sales_user_id === user.id && data.updated_by !== user.username) {
-      showToast(`📦 Đơn "${data.customer_name}" vừa được cập nhật: ${statusLabel(data.warehouse_status)}`);
+      showToast(`📦 Đơn "${data.customer_name}" vừa được cập nhật: ${statusLabel(data.warehouse_status, data.order_type)}`);
     }
     if (typeof window.refreshList === 'function') window.refreshList();
   });
