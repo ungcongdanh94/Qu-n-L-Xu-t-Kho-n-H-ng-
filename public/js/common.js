@@ -146,6 +146,126 @@ function orderTypeLabel(type) {
   return { xuat_kho: 'Xuất kho', nhap_kho: 'Nhập kho' }[type] || type;
 }
 
+// Kiem tra 1 nguoi dung co duoc sua thong tin 1 don hang khong (khop voi logic phia server
+// trong routes/orders.js - chi dung de AN/HIEN nut "Sua don", server van tu kiem tra lai).
+function canEditOrder(user, order) {
+  const canEditAny = hasUserRole(user, 'leader') || hasUserPermission(user, 'delete_any_order');
+  if (canEditAny) return true;
+  return hasUserRole(user, 'sales') && order.sales_username === user.username && order.status === 'cho_soan';
+}
+
+// Tra ve HTML form sua thong tin don hang - dung chung cho sales.html va myorders.html.
+// canEditWarehouses = false khi da co kho xac nhan xu ly (khoa checkbox lai, chi quan ly moi doi duoc).
+function renderOrderEditForm(order, warehousesList, canEditWarehouses) {
+  const currentWhIds = (order.warehouses || []).map((w) => String(w.warehouse_id));
+  const escapeAttr = (s) => (s || '').toString().replace(/"/g, '&quot;');
+  const whHtml = (warehousesList || [])
+    .map(
+      (w) => `
+      <label style="display:flex; align-items:center; gap:8px; font-size:14px; color:var(--text); margin:0;">
+        <input type="checkbox" class="edit-warehouse-checkbox" value="${w.id}"
+          ${currentWhIds.includes(String(w.id)) ? 'checked' : ''} ${canEditWarehouses ? '' : 'disabled'}
+          style="width:18px; height:18px;" />
+        ${w.name}
+      </label>`
+    )
+    .join('');
+
+  return `
+    <label>Loại đơn</label>
+    <select id="editOrderType">
+      <option value="xuat_kho" ${order.order_type === 'xuat_kho' ? 'selected' : ''}>📤 Xuất kho</option>
+      <option value="nhap_kho" ${order.order_type === 'nhap_kho' ? 'selected' : ''}>📥 Nhập kho</option>
+    </select>
+    <label>Mã đơn hàng</label>
+    <input type="text" id="editOrderCode" value="${escapeAttr(order.order_code)}" placeholder="Ví dụ: BH83746" />
+    <label>Tên khách hàng</label>
+    <input type="text" id="editCustomerName" value="${escapeAttr(order.customer_name)}" />
+    <label>Ghi chú</label>
+    <textarea id="editNote">${order.note || ''}</textarea>
+    <label>Kho nhận đơn hàng</label>
+    <div style="display:flex; flex-direction:column; gap:8px; margin-top:6px;">
+      ${whHtml || '<span class="hint">Không có kho nào.</span>'}
+    </div>
+    ${!canEditWarehouses ? '<p class="hint">⚠️ Đã có kho xác nhận xử lý đơn này nên không tự đổi kho được — liên hệ quản lý nếu cần đổi.</p>' : ''}
+    <div style="display:flex; gap:10px; margin-top:14px;">
+      <button class="btn" style="margin:0; flex:1;" onclick="submitOrderEdit(${order.id})">💾 Lưu thay đổi</button>
+      <button class="btn secondary" style="margin:0; flex:1;" onclick="cancelEditOrder(${order.id})">Hủy</button>
+    </div>
+    <div id="editOrderMsg"></div>
+  `;
+}
+
+// Mo giao dien sua ngay trong modal chi tiet don hang dang mo san (thay the noi dung xem
+// thong thuong bang form sua). Tu tai lai chinh don hang + danh sach kho de dam bao du lieu moi nhat.
+async function startEditOrder(orderId) {
+  try {
+    const [orderData, whData] = await Promise.all([
+      apiFetch(`/api/orders/${orderId}`),
+      apiFetch('/api/warehouses'),
+    ]);
+    const order = orderData.order;
+    const user = getUser();
+    const canEditAny = hasUserRole(user, 'leader') || hasUserPermission(user, 'delete_any_order');
+    const anyStarted = (order.warehouses || []).some((w) => w.confirmed_by_username);
+    const canEditWarehouses = canEditAny || !anyStarted;
+
+    document.getElementById('modalTitle').textContent = '✏️ Sửa đơn hàng';
+    document.getElementById('modalContent').innerHTML = renderOrderEditForm(order, whData.warehouses, canEditWarehouses);
+  } catch (err) {
+    alert('Không tải được thông tin để sửa: ' + err.message);
+  }
+}
+
+// Huy sua, quay lai xem chi tiet don hang binh thuong (ham openOrderDetail duoc dinh nghia
+// rieng o tung trang goi ham nay, vi cach hien thi chi tiet co khac nhau doi chut giua cac trang).
+function cancelEditOrder(orderId) {
+  if (typeof window.openOrderDetail === 'function') window.openOrderDetail(orderId);
+  else if (typeof window.openOrder === 'function') window.openOrder(orderId);
+}
+
+async function submitOrderEdit(orderId) {
+  const msg = document.getElementById('editOrderMsg');
+  msg.className = '';
+  msg.textContent = '';
+
+  const customerName = document.getElementById('editCustomerName').value.trim();
+  if (!customerName) {
+    msg.className = 'error-msg';
+    msg.textContent = 'Vui lòng nhập tên khách hàng.';
+    return;
+  }
+
+  const body = {
+    order_type: document.getElementById('editOrderType').value,
+    order_code: document.getElementById('editOrderCode').value.trim(),
+    customer_name: customerName,
+    note: document.getElementById('editNote').value.trim(),
+  };
+
+  // Chi gui warehouse_ids khi checkbox KHONG bi khoa (con duoc phep doi kho)
+  const whCheckboxes = document.querySelectorAll('.edit-warehouse-checkbox');
+  if (whCheckboxes.length > 0 && !whCheckboxes[0].disabled) {
+    const checkedWh = Array.from(whCheckboxes).filter((el) => el.checked).map((el) => el.value);
+    if (checkedWh.length === 0) {
+      msg.className = 'error-msg';
+      msg.textContent = 'Vui lòng chọn ít nhất 1 kho nhận đơn hàng.';
+      return;
+    }
+    body.warehouse_ids = checkedWh.join(',');
+  }
+
+  try {
+    await apiFetch(`/api/orders/${orderId}`, { method: 'PATCH', body: JSON.stringify(body) });
+    showToast('✅ Đã lưu thay đổi đơn hàng.');
+    closeModal();
+    if (typeof window.refreshList === 'function') window.refreshList();
+  } catch (err) {
+    msg.className = 'error-msg';
+    msg.textContent = err.message;
+  }
+}
+
 function todayStr() {
   return localDateStr(new Date());
 }
@@ -261,6 +381,14 @@ function connectRealtime() {
   });
 
   __sseConnection.addEventListener('order_deleted', () => {
+    if (typeof window.refreshList === 'function') window.refreshList();
+  });
+
+  __sseConnection.addEventListener('order_edited', (e) => {
+    const data = JSON.parse(e.data);
+    if (hasUserRole(user, 'sales') && data.sales_user_id === user.id && data.updated_by !== user.username) {
+      showToast(`✏️ Đơn "${data.customer_name}" vừa được sửa thông tin bởi ${data.updated_by}.`);
+    }
     if (typeof window.refreshList === 'function') window.refreshList();
   });
 

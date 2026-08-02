@@ -181,6 +181,7 @@
         )
         .join('<br/>');
 
+      const canManage = hasUserRole(user, 'leader') || hasUserPermission(user, 'delete_any_order');
       document.getElementById('modalContent').innerHTML = `
         <p class="hint">
           Loại đơn: <span class="badge ${data.order.order_type}">${orderTypeLabel(data.order.order_type)}</span><br/>
@@ -191,7 +192,10 @@
         ${data.order.note ? `<div class="note-box">📝 <b>Ghi chú:</b> ${data.order.note}</div>` : ''}
         <p class="hint">${warehousesBreakdown}</p>
         <div class="photo-gallery">${photosHtml}</div>
-        ${hasUserRole(user, 'leader') || hasUserPermission(user, 'delete_any_order') ? '<button class="btn danger" onclick="deleteCurrentOrder()">🗑️ Xoá đơn hàng này</button>' : ''}
+        <div style="display:flex; gap:10px; margin-top:10px;">
+          ${canManage ? '<button class="btn secondary" style="margin:0; flex:1;" onclick="startEditOrder(' + data.order.id + ')">✏️ Sửa đơn</button>' : ''}
+          ${canManage ? '<button class="btn danger" style="margin:0; flex:1;" onclick="deleteCurrentOrder()">🗑️ Xoá đơn</button>' : ''}
+        </div>
         <div id="deleteMsg"></div>
       `;
       document.getElementById('modalOverlay').style.display = 'flex';

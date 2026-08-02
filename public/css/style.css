@@ -183,7 +183,9 @@ textarea { resize: vertical; min-height: 60px; }
   display: flex;
   align-items: center;
   gap: 8px;
+  row-gap: 8px;
   margin-bottom: 12px;
+  flex-wrap: wrap;
 }
 .day-nav button {
   background: #fff;
@@ -195,8 +197,8 @@ textarea { resize: vertical; min-height: 60px; }
   cursor: pointer;
   flex-shrink: 0;
 }
-.day-nav input[type="date"] { flex: 1; margin: 0; }
-.day-nav .today-btn { width: auto; padding: 0 12px; font-size: 13px; }
+.day-nav input[type="date"] { flex: 1 1 140px; min-width: 0; margin: 0; }
+.day-nav .today-btn { width: auto; flex-shrink: 0; padding: 0 12px; font-size: 13px; }
 
 .error-msg { color: var(--danger); font-size: 13px; margin-top: 8px; }
 .success-msg { color: var(--success); font-size: 13px; margin-top: 8px; }

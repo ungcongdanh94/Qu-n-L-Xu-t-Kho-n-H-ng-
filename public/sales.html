@@ -344,6 +344,7 @@
       const canDelete =
         (data.order.sales_username === user.username && data.order.status === 'cho_soan') ||
         hasUserPermission(user, 'delete_any_order');
+      const canEdit = canEditOrder(user, data.order);
 
       document.getElementById('modalContent').innerHTML = `
         <p class="hint">
@@ -354,7 +355,10 @@
         ${data.order.note ? `<div class="note-box">📝 <b>Ghi chú:</b> ${data.order.note}</div>` : ''}
         <p class="hint">${warehousesBreakdown}</p>
         <div class="photo-gallery">${photosHtml}</div>
-        ${canDelete ? '<button class="btn danger" onclick="deleteMyOrder()">🗑️ Xoá đơn này (lỡ đăng sai)</button>' : ''}
+        <div style="display:flex; gap:10px; margin-top:10px;">
+          ${canEdit ? '<button class="btn secondary" style="margin:0; flex:1;" onclick="startEditOrder(' + data.order.id + ')">✏️ Sửa đơn</button>' : ''}
+          ${canDelete ? '<button class="btn danger" style="margin:0; flex:1;" onclick="deleteMyOrder()">🗑️ Xoá đơn (lỡ đăng sai)</button>' : ''}
+        </div>
         <div id="deleteOrderMsg"></div>
       `;
       document.getElementById('modalOverlay').style.display = 'flex';

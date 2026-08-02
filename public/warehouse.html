@@ -195,7 +195,12 @@
 
         <div id="uploadMsg"></div>
 
-        ${hasUserRole(user, 'leader') || hasUserPermission(user, 'delete_any_order') ? '<button class="btn danger" style="margin-top:16px;" onclick="deleteCurrentOrderWarehouse()">🗑️ Xoá đơn hàng này</button><div id="deleteMsgWarehouse"></div>' : ''}
+        ${hasUserRole(user, 'leader') || hasUserPermission(user, 'delete_any_order') ? `
+        <div style="display:flex; gap:10px; margin-top:16px;">
+          <button class="btn secondary" style="margin:0; flex:1;" onclick="startEditOrder(${data.order.id})">✏️ Sửa đơn</button>
+          <button class="btn danger" style="margin:0; flex:1;" onclick="deleteCurrentOrderWarehouse()">🗑️ Xoá đơn</button>
+        </div>
+        <div id="deleteMsgWarehouse"></div>` : ''}
       `;
       document.getElementById('modalOverlay').style.display = 'flex';
     }
