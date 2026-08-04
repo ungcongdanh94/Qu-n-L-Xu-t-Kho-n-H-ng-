@@ -208,6 +208,11 @@
         actionHtml = `<button class="btn" onclick="confirmBySales()">✅ Xác nhận đã tiếp nhận thông tin</button>`;
       }
 
+      const canDelete =
+        hasUserRole(user, 'leader') ||
+        hasUserPermission(user, 'delete_any_order') ||
+        (currentReturn.initiated_by_username === user.username && currentReturn.status !== 'hoan_tat');
+
       document.getElementById('modalContent').innerHTML = `
         <p class="hint">
           Trạng thái: <span class="badge ${currentReturn.status}">${statusLabel(currentReturn.status)}</span><br/>
@@ -218,9 +223,25 @@
         ${currentReturn.note ? `<div class="note-box">📝 <b>Ghi chú:</b> ${currentReturn.note}</div>` : ''}
         ${currentReturn.photo_path ? `<img src="/uploads/${currentReturn.photo_path}" style="max-width:100%;border-radius:8px;cursor:pointer;" onclick="openImageViewer('/uploads/${currentReturn.photo_path}')" />` : '<p class="hint">Chưa có hình xác nhận.</p>'}
         ${actionHtml}
+        ${canDelete ? `<button class="btn danger" style="margin-top:14px;" onclick="deleteReturn()">🗑️ Xoá phiếu trả hàng này</button>` : ''}
         <div id="actionMsg"></div>
       `;
       document.getElementById('modalOverlay').style.display = 'flex';
+    }
+
+    async function deleteReturn() {
+      if (!currentReturn) return;
+      if (!confirm(`Xoá phiếu trả hàng của "${currentReturn.customer_name}"? Hành động này không thể hoàn tác.`)) return;
+      const msg = document.getElementById('actionMsg');
+      try {
+        await apiFetch(`/api/returns/${currentReturn.id}`, { method: 'DELETE' });
+        showToast('🗑️ Đã xoá phiếu trả hàng.');
+        closeModal();
+        loadReturns();
+      } catch (err) {
+        msg.className = 'error-msg';
+        msg.textContent = err.message;
+      }
     }
 
     async function confirmWithPhoto(inputEl) {

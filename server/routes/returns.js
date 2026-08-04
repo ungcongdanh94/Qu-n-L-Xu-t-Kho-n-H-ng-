@@ -1,9 +1,11 @@
 const express = require('express');
+const path = require('path');
+const fs = require('fs');
 const db = require('../db');
-const { requireAuth, requireRole, getUserRoles } = require('../middleware/auth');
+const { requireAuth, requireRole, hasPermission, getUserRoles } = require('../middleware/auth');
 const { broadcast } = require('../sse');
 const { sendPushToUsers, getRelevantUserIds, getLeaderUserIds } = require('../push');
-const { upload } = require('../uploadConfig');
+const { upload, uploadDir } = require('../uploadConfig');
 const { compressImage } = require('../imageUtils');
 
 const router = express.Router();
@@ -176,6 +178,39 @@ router.get('/:id', requireAuth, (req, res) => {
     .get(req.params.id);
   if (!ret) return res.status(404).json({ error: 'Khong tim thay phieu tra hang.' });
   res.json({ return: ret });
+});
+
+// ============ Xoa phieu tra hang (xoa luon hinh anh lien quan tren dia) ============
+router.delete('/:id', requireAuth, requireRole('leader', 'sales', 'warehouse'), (req, res) => {
+  const ret = db.prepare('SELECT * FROM returns WHERE id = ?').get(req.params.id);
+  if (!ret) return res.status(404).json({ error: 'Khong tim thay phieu tra hang.' });
+
+  const canDeleteAny = getUserRoles(req.user).includes('leader') || hasPermission(req.user.id, 'delete_any_order');
+
+  if (!canDeleteAny) {
+    // Nguoi lap phieu (sales hoac thu kho) chi duoc xoa DUNG phieu minh lap, va CHI KHI phieu
+    // CHUA hoan tat (con dang cho ben kia xac nhan) - tranh xoa nham phieu da xu ly xong.
+    if (ret.initiated_by_username !== req.user.username) {
+      return res.status(403).json({ error: 'Ban khong co quyen xoa phieu tra hang nay.' });
+    }
+    if (ret.status === 'hoan_tat') {
+      return res.status(400).json({
+        error: 'Phieu tra hang nay da hoan tat, khong the tu xoa. Lien he quan ly neu can xoa.',
+      });
+    }
+  }
+
+  db.prepare('DELETE FROM returns WHERE id = ?').run(ret.id);
+
+  // Xoa file hinh anh tren dia (best-effort, khong lam fail request neu xoa file loi)
+  if (ret.photo_path) {
+    const filePath = path.join(uploadDir, ret.photo_path);
+    fs.unlink(filePath, () => {});
+  }
+
+  broadcast('return_deleted', { return_id: ret.id });
+
+  res.json({ ok: true });
 });
 
 module.exports = router;

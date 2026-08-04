@@ -427,6 +427,10 @@ function connectRealtime() {
     if (typeof window.refreshList === 'function') window.refreshList();
   });
 
+  __sseConnection.addEventListener('return_deleted', () => {
+    if (typeof window.refreshList === 'function') window.refreshList();
+  });
+
   __sseConnection.onerror = () => {
     // EventSource tu dong ket noi lai, khong can xu ly gi them
   };
