@@ -17,6 +17,7 @@
   <div class="container">
     <div class="card">
       <h2>📦 Đơn hàng chờ xử lý <span id="warehouseNameLabel" class="hint" style="font-weight:400;"></span></h2>
+      <p id="warehouseScopeHint" class="hint"></p>
 
       <div class="day-nav">
         <button onclick="shiftDay(-1)">◀</button>
@@ -75,10 +76,16 @@
     let currentOrder = null;
 
     async function initWarehouseHeader() {
+      const hintEl = document.getElementById('warehouseScopeHint');
       if (hasUserRole(user, 'warehouse') && !hasUserRole(user, 'leader')) {
         document.getElementById('warehouseNameLabel').textContent = user.warehouse_name
           ? `— ${user.warehouse_name}`
           : '';
+        // Ghi ro pham vi xem duoc, tranh nham lan la loi khi don gan cho kho khac khong hien ra
+        // (bo loc trang thai KHONG lien quan gi den dieu nay - trang nay luon chi hien dung 1 kho).
+        hintEl.textContent = user.warehouse_name
+          ? `Trang này chỉ hiện đơn hàng được gán cho ${user.warehouse_name}. Đơn gán cho kho khác sẽ không hiện ở đây, dù chọn lọc trạng thái nào.`
+          : 'Bạn chưa được gán vào kho cụ thể nào - liên hệ quản lý để được gán kho.';
       } else if (hasUserRole(user, 'leader')) {
         const data = await apiFetch('/api/warehouses');
         const select = document.getElementById('warehouseFilter');
@@ -86,6 +93,7 @@
         select.innerHTML =
           '<option value="">Tất cả các kho</option>' +
           data.warehouses.map((w) => `<option value="${w.id}">${w.name}</option>`).join('');
+        hintEl.textContent = 'Đang xem tất cả các kho. Chọn 1 kho cụ thể ở bộ lọc bên dưới nếu muốn xem riêng.';
       }
     }
 
