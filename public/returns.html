@@ -99,6 +99,25 @@
       document.getElementById('dropText').textContent = 'Nhấn để chọn hình khác';
     }
 
+    // Cho phep dan anh bang Ctrl+V (copy tu Zalo, Excel, anh chup man hinh...) - chi khi nguoi
+    // dung co quyen dinh kem hinh luc lap phieu (thu kho/quan ly), khop voi chu "(hoặc dán ảnh
+    // bằng Ctrl+V)" da ghi san o giao dien nhung truoc day chua duoc gan code xu ly.
+    document.addEventListener('paste', (e) => {
+      if (!canAttachPhotoOnCreate) return;
+      const items = e.clipboardData && e.clipboardData.items;
+      if (!items) return;
+      for (const item of items) {
+        if (item.type && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            onPhotoSelected({ target: { files: [file] } });
+          }
+          break;
+        }
+      }
+    });
+
     async function loadWarehouses() {
       const data = await apiFetch('/api/warehouses');
       const opts = data.warehouses.map((w) => `<option value="${w.id}">${w.name}</option>`).join('');

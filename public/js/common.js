@@ -62,6 +62,10 @@ function logout() {
     __sseConnection.close();
     __sseConnection = null;
   }
+  if (typeof __sseReconnectTimer !== 'undefined' && __sseReconnectTimer) {
+    clearTimeout(__sseReconnectTimer);
+    __sseReconnectTimer = null;
+  }
   clearSession();
   window.location.href = '/login.html';
 }
@@ -375,12 +379,20 @@ if (!document.getElementById('toastKeyframes')) {
 
 // ==== Ket noi real-time (Server-Sent Events) de nhan thong bao va tu dong lam moi danh sach ====
 let __sseConnection = null;
+let __sseReconnectTimer = null;
 function connectRealtime() {
   const token = getToken();
   if (!token || __sseConnection) return;
 
   const user = getUser();
   __sseConnection = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
+
+  // Vua ket noi (lan dau HOAC sau khi mat mang/reconnect) -> tai lai danh sach ngay, vi cac
+  // su kien phat sinh trong luc mat ket noi se KHONG duoc gui lai (khong co co che luu lich su
+  // su kien) - neu khong lam buoc nay, du lieu tren man hinh co the bi sot ma khong ai biet.
+  __sseConnection.onopen = () => {
+    if (typeof window.refreshList === 'function') window.refreshList();
+  };
 
   __sseConnection.addEventListener('new_order', (e) => {
     const data = JSON.parse(e.data);
@@ -432,9 +444,45 @@ function connectRealtime() {
   });
 
   __sseConnection.onerror = () => {
-    // EventSource tu dong ket noi lai, khong can xu ly gi them
+    // Trinh duyet tu dong thu ket noi lai khi con o trang thai CONNECTING (readyState 0).
+    // Nhung neu server tra loi loi xac thuc (vi du token het han) trinh duyet se CHUYEN VE
+    // CLOSED (readyState 2) va KHONG tu thu lai nua - neu bo qua truong hop nay, app se mat
+    // toan bo cap nhat realtime im lang, khong ai biet. Chu dong dong + hen gio ket noi lai.
+    if (__sseConnection && __sseConnection.readyState === 2) {
+      __sseConnection.close();
+      __sseConnection = null;
+      if (!__sseReconnectTimer) {
+        __sseReconnectTimer = setTimeout(() => {
+          __sseReconnectTimer = null;
+          connectRealtime();
+        }, 8000);
+      }
+    }
   };
 }
+
+// Khi app tu nen quay lai hien thi (mo lai tab da bi trinh duyet "ngu", mo lai app tren dien
+// thoai sau khi khoa man hinh...) - luon tai lai danh sach ngay, va kiem tra/khoi phuc ket noi
+// realtime neu no da bi dong trong luc an. Day la luoi an toan quan trong nhat de khong sot
+// du lieu, vi day chinh la tinh huong pho bien nhat lam mat ket noi tren dien thoai.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  if (typeof window.refreshList === 'function') window.refreshList();
+  if (__sseConnection && __sseConnection.readyState === 2) {
+    __sseConnection.close();
+    __sseConnection = null;
+  }
+  connectRealtime();
+});
+
+// Luoi an toan cuoi cung: du SSE va cac co che tren hoat dong dung, van tu tai lai danh sach
+// dinh ky (chi khi dang xem app, khong lam gian doan luc dang go/nhap lieu) de dam bao khong
+// bao gio bi sot du lieu qua lau du co xay ra loi gi khong luong truoc duoc.
+setInterval(() => {
+  if (document.visibilityState === 'visible' && typeof window.refreshList === 'function') {
+    window.refreshList();
+  }
+}, 60 * 1000);
 
 // ==== Web Push: dang ky nhan thong bao day (hoat dong ke ca khi da dong trinh duyet) ====
 function urlBase64ToUint8Array(base64String) {
