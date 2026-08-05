@@ -18,6 +18,7 @@ router.post('/', requireAuth, requireRole('sales', 'warehouse', 'leader'), uploa
   const customerName = (req.body.customer_name || '').trim();
   const warehouseId = parseInt(req.body.warehouse_id, 10);
   const note = req.body.note || null;
+  const orderCode = (req.body.order_code || '').trim() || null;
 
   if (!customerName) return res.status(400).json({ error: 'Vui long nhap ten khach hang.' });
   if (!warehouseId) return res.status(400).json({ error: 'Vui long chon kho.' });
@@ -39,10 +40,10 @@ router.post('/', requireAuth, requireRole('sales', 'warehouse', 'leader'), uploa
 
   const info = db
     .prepare(
-      `INSERT INTO returns (customer_name, warehouse_id, note, photo_path, initiated_by_role, initiated_by_username, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO returns (customer_name, warehouse_id, order_code, note, photo_path, initiated_by_role, initiated_by_username, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(customerName, warehouseId, note, hasPhoto ? req.file.filename : null, initiatedByRole, req.user.username, status);
+    .run(customerName, warehouseId, orderCode, note, hasPhoto ? req.file.filename : null, initiatedByRole, req.user.username, status);
 
   db.prepare('INSERT OR IGNORE INTO customers (name) VALUES (?)').run(customerName);
 
@@ -155,7 +156,15 @@ router.get('/', requireAuth, (req, res) => {
     params.push(`%${customer}%`);
   }
 
-  if (getUserRoles(req.user).includes('warehouse') && !getUserRoles(req.user).includes('leader')) {
+  // CHI thu kho "thuan" (khong kiem them vai tro sales) moi bi gioi han xem theo dung kho cua ho.
+  // Neu tai khoan co CA vai tro sales (du co kiem them thu kho), van phai thay DUOC MOI phieu tra
+  // hang minh lap - vi khach co the tra hang qua kho KHAC voi kho ho duoc gan lam thu kho.
+  const isWarehouseOnly =
+    getUserRoles(req.user).includes('warehouse') &&
+    !getUserRoles(req.user).includes('leader') &&
+    !getUserRoles(req.user).includes('sales');
+
+  if (isWarehouseOnly) {
     sql += ' AND r.warehouse_id = ?';
     params.push(req.user.warehouse_id);
   } else if (warehouse_id) {

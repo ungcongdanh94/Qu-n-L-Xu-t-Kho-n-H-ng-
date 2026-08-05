@@ -405,7 +405,16 @@ router.get('/', requireAuth, (req, res) => {
   const params = [];
   let sql;
 
-  const isWarehouseScoped = getUserRoles(req.user).includes('warehouse') && !getUserRoles(req.user).includes('leader') && !hasPermission(req.user.id, 'view_all');
+  // CHI thu kho "thuan" (khong kiem them vai tro sales) moi bi gioi han xem theo dung kho cua ho.
+  // Neu tai khoan co CA vai tro sales, khi ho dang o "view sales" (trang Dang don / Don hang) van
+  // phai thay DUOC MOI don minh tao du don do gan kho nao - vi khach co the mua hang qua kho KHAC
+  // voi kho ho duoc gan lam thu kho. Trang Xu ly kho (khong gui view=sales) van gioi han nhu cu,
+  // vi luc do ho dang lam viec voi vai tro thu kho, can dung field my_status rieng cua kho ho.
+  const isWarehouseScoped =
+    getUserRoles(req.user).includes('warehouse') &&
+    !getUserRoles(req.user).includes('leader') &&
+    !hasPermission(req.user.id, 'view_all') &&
+    !(getUserRoles(req.user).includes('sales') && req.query.view === 'sales');
 
   if (isWarehouseScoped) {
     // Thu kho: chi xem don co gan kho cua minh, va loc theo TRANG THAI RIENG cua kho ho
@@ -463,6 +472,20 @@ router.get('/', requireAuth, (req, res) => {
   const orders = db.prepare(sql).all(...params);
   attachWarehousesInfo(orders);
 
+  res.json({ orders });
+});
+
+// ============ Tra cuu don hang theo ma don - dung cho autocomplete o phan lap phieu tra hang
+// (nhap/chon dung ma don se tu dien ten khach, khoi phai nho/danh may lai ten) ============
+router.get('/lookup-by-code', requireAuth, (req, res) => {
+  const code = (req.query.code || '').trim();
+  if (!code) return res.json({ orders: [] });
+  const orders = db
+    .prepare(
+      `SELECT id, order_code, customer_name, order_type, warehouse_id, created_at
+       FROM orders WHERE order_code LIKE ? ORDER BY created_at DESC LIMIT 20`
+    )
+    .all(`%${code}%`);
   res.json({ orders });
 });
 

@@ -24,6 +24,10 @@
         <option value="">-- Chọn kho --</option>
       </select>
 
+      <label>Mã đơn hàng (tuỳ chọn - chọn đúng mã sẽ tự điền tên khách)</label>
+      <input type="text" id="orderCodeInput" placeholder="Ví dụ: BH83746" list="orderCodeList" oninput="onOrderCodeInput()" />
+      <datalist id="orderCodeList"></datalist>
+
       <label>Tên khách hàng</label>
       <input type="text" id="customerName" placeholder="Nhập tên khách hàng..." list="customerList" />
       <datalist id="customerList"></datalist>
@@ -138,8 +142,45 @@
       } catch (err) {}
     }
 
+    // Goi y ma don hang khi go, va tu dien ten khach khi go/chon DUNG 1 ma da co - de sales/thu kho
+    // khong phai nho lai hoac go tay ten khach, giam sai sot chinh ta ten.
+    let orderCodeLookupCache = {};
+    let orderCodeLookupTimer = null;
+
+    function tryAutoFillFromOrderCode() {
+      const val = document.getElementById('orderCodeInput').value.trim();
+      const key = Object.keys(orderCodeLookupCache).find((k) => k.toLowerCase() === val.toLowerCase());
+      if (key) document.getElementById('customerName').value = orderCodeLookupCache[key];
+    }
+
+    function onOrderCodeInput() {
+      tryAutoFillFromOrderCode();
+      if (orderCodeLookupTimer) clearTimeout(orderCodeLookupTimer);
+      const val = document.getElementById('orderCodeInput').value.trim();
+      if (val.length < 2) {
+        document.getElementById('orderCodeList').innerHTML = '';
+        return;
+      }
+      orderCodeLookupTimer = setTimeout(async () => {
+        try {
+          const data = await apiFetch(`/api/orders/lookup-by-code?code=${encodeURIComponent(val)}`);
+          orderCodeLookupCache = {};
+          document.getElementById('orderCodeList').innerHTML = data.orders
+            .map((o) => {
+              orderCodeLookupCache[o.order_code] = o.customer_name;
+              return `<option value="${o.order_code}">${o.customer_name}</option>`;
+            })
+            .join('');
+          tryAutoFillFromOrderCode();
+        } catch (err) {
+          // Mat mang tam thoi - bo qua, sales van tu nhap ten khach binh thuong duoc
+        }
+      }, 300);
+    }
+
     async function submitReturn() {
       const warehouseId = document.getElementById('warehouseSelect').value;
+      const orderCode = document.getElementById('orderCodeInput').value.trim();
       const customerName = document.getElementById('customerName').value.trim();
       const note = document.getElementById('note').value.trim();
       const msg = document.getElementById('msg');
@@ -151,6 +192,7 @@
 
       const form = new FormData();
       form.append('warehouse_id', warehouseId);
+      if (orderCode) form.append('order_code', orderCode);
       form.append('customer_name', customerName);
       if (note) form.append('note', note);
       if (canAttachPhotoOnCreate && selectedFile) form.append('photo', selectedFile);
@@ -159,6 +201,9 @@
         await apiFetch('/api/returns', { method: 'POST', body: form });
         msg.className = 'success-msg';
         msg.textContent = '✅ Đã lập phiếu trả hàng thành công!';
+        document.getElementById('orderCodeInput').value = '';
+        document.getElementById('orderCodeList').innerHTML = '';
+        orderCodeLookupCache = {};
         document.getElementById('customerName').value = '';
         document.getElementById('note').value = '';
         selectedFile = null;
@@ -193,7 +238,7 @@
           <div class="order-item" onclick="openReturn(${r.id})">
             ${r.photo_path ? `<img src="/uploads/${r.photo_path}" onclick="event.stopPropagation(); openImageViewer('/uploads/${r.photo_path}')" />` : '<div style="width:64px;height:64px;background:#f1f1f1;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:11px;">Chưa có hình</div>'}
             <div class="info">
-              <div class="name">${r.customer_name}</div>
+              <div class="name">${r.customer_name}${r.order_code ? ` <span style="color:var(--muted); font-weight:400; font-size:12px;">(${r.order_code})</span>` : ''}</div>
               <div class="meta">
                 <span class="badge ${r.status}">${statusLabel(r.status)}</span>
                 &nbsp;·&nbsp; ${r.warehouse_name || ''} &nbsp;·&nbsp; Lập bởi: ${r.initiated_by_username} &nbsp;·&nbsp; ${formatDateTime(r.created_at)}
@@ -236,6 +281,7 @@
         <p class="hint">
           Trạng thái: <span class="badge ${currentReturn.status}">${statusLabel(currentReturn.status)}</span><br/>
           Kho: ${currentReturn.warehouse_name || ''}<br/>
+          ${currentReturn.order_code ? `Mã đơn hàng: <b>${currentReturn.order_code}</b><br/>` : ''}
           Lập bởi: ${currentReturn.initiated_by_username} (${roleLabel(currentReturn.initiated_by_role)}) · ${formatDateTime(currentReturn.created_at)}<br/>
           ${currentReturn.confirmed_by_username ? 'Xác nhận bởi: ' + currentReturn.confirmed_by_username : ''}
         </p>

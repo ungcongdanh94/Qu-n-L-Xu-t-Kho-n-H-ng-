@@ -16,7 +16,10 @@
 
   <div class="container">
     <div class="card">
-      <h2>📑 Đơn hàng</h2>
+      <h2 style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+        <span>📑 Đơn hàng</span>
+        <button class="btn secondary" style="margin:0; width:auto; padding:6px 12px; font-size:13px;" onclick="loadOrders()">🔄 Làm mới</button>
+      </h2>
       <p class="hint">Xem đơn của tất cả sales, có ghi rõ ai đã đăng đơn nào.</p>
 
       <label style="display:flex; align-items:center; gap:8px; margin-top:10px;">
@@ -97,6 +100,7 @@
       el.innerHTML = 'Đang tải...';
 
       const params = new URLSearchParams();
+      params.set('view', 'sales');
       if (document.getElementById('onlyMineFilter').checked) params.set('mine', '1');
       if (status) params.set('status', status);
       if (orderType) params.set('order_type', orderType);

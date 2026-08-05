@@ -89,6 +89,7 @@ CREATE TABLE IF NOT EXISTS returns (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   customer_name TEXT NOT NULL,
   warehouse_id INTEGER NOT NULL,
+  order_code TEXT,
   note TEXT,
   photo_path TEXT,
   initiated_by_role TEXT NOT NULL CHECK(initiated_by_role IN ('sales','warehouse')),
@@ -157,6 +158,9 @@ if (!columnExists('users', 'permissions')) {
 }
 if (!columnExists('order_photos', 'warehouse_id')) {
   db.exec('ALTER TABLE order_photos ADD COLUMN warehouse_id INTEGER REFERENCES warehouses(id)');
+}
+if (!columnExists('returns', 'order_code')) {
+  db.exec('ALTER TABLE returns ADD COLUMN order_code TEXT');
 }
 // Tao index cho order_photos.warehouse_id O DAY (sau khi chac chan cot da ton tai), tranh loi
 // "no such column" tren cac database cu (da co bang order_photos truoc khi co tinh nang nay).

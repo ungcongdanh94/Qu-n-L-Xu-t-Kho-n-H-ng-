@@ -65,7 +65,10 @@
     </div>
 
     <div class="card">
-      <h2>📋 Đơn hàng vừa đăng</h2>
+      <h2 style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+        <span>📋 Đơn hàng vừa đăng</span>
+        <button class="btn secondary" style="margin:0; width:auto; padding:6px 12px; font-size:13px;" onclick="loadMyOrders()">🔄 Làm mới</button>
+      </h2>
       <p class="hint">Chỉ hiện 5 đơn gần nhất. Xem đầy đủ, lọc theo ngày/trạng thái tại <a href="/myorders.html" style="color:var(--primary); font-weight:600;">Đơn của tôi</a>.</p>
       <div id="myOrders">Đang tải...</div>
     </div>
@@ -283,7 +286,7 @@
 
     async function loadMyOrders() {
       try {
-        const data = await apiFetch('/api/orders?mine=1');
+        const data = await apiFetch('/api/orders?mine=1&view=sales');
         const el = document.getElementById('myOrders');
         if (data.orders.length === 0) {
           el.innerHTML = '<p class="hint">Chưa có đơn hàng nào.</p>';
