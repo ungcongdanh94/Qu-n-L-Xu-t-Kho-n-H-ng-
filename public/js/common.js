@@ -138,8 +138,8 @@ function statusLabel(status, orderType) {
     cho_soan: 'Chờ soạn hàng',
     da_soan: 'Đã giao hàng',
     co_hang_tra: 'Có hàng trả',
-    cho_kho_xac_nhan: 'Chờ kho chụp hình',
-    cho_sales_xac_nhan: 'Chờ sales xác nhận',
+    cho_kho_xac_nhan: 'Chờ kho gửi ảnh hàng thực trả',
+    cho_sales_xac_nhan: 'Chờ sales gửi ảnh phiếu trả hàng',
     hoan_tat: 'Hoàn tất',
   }[status] || status;
 }
