@@ -318,6 +318,7 @@
         hasUserRole(user, 'leader') ||
         hasUserPermission(user, 'delete_any_order') ||
         (currentReturn.initiated_by_username === user.username && currentReturn.status !== 'hoan_tat');
+      const canManageAdmin = hasUserRole(user, 'leader');
 
       const photoSlotHtml = (label, path) => `
         <div style="flex:1; min-width:140px;">
@@ -341,7 +342,10 @@
           ${photoSlotHtml('📦 Hàng thực trả (Thủ kho)', currentReturn.goods_photo_path)}
         </div>
         ${actionHtml}
-        ${canDelete ? `<button class="btn danger" style="margin-top:14px;" onclick="deleteReturn()">🗑️ Xoá phiếu trả hàng này</button>` : ''}
+        <div style="display:flex; gap:10px; margin-top:14px;">
+          ${canManageAdmin ? '<button class="btn secondary" style="margin:0; flex:1;" onclick="startEditReturn()">✏️ Sửa phiếu (Admin)</button>' : ''}
+          ${canDelete ? '<button class="btn danger" style="margin:0; flex:1;" onclick="deleteReturn()">🗑️ Xoá phiếu</button>' : ''}
+        </div>
         <div id="actionMsg"></div>
       `;
       document.getElementById('modalOverlay').style.display = 'flex';
@@ -356,6 +360,82 @@
         showToast('🗑️ Đã xoá phiếu trả hàng.');
         closeModal();
         loadReturns();
+      } catch (err) {
+        msg.className = 'error-msg';
+        msg.textContent = err.message;
+      }
+    }
+
+    // Sua phieu - CHI ADMIN/QUAN LY. Dung khi lo dang nham anh o sai vai tro (Sales/Thu kho) hoac
+    // can sua nhanh thong tin (kho, ma don, ten khach, ghi chu).
+    async function startEditReturn() {
+      if (!currentReturn) return;
+      const whData = await apiFetch('/api/warehouses');
+      const whOptions = whData.warehouses
+        .map((w) => `<option value="${w.id}" ${w.id === currentReturn.warehouse_id ? 'selected' : ''}>${w.name}</option>`)
+        .join('');
+      const hasAnyPhoto = currentReturn.voucher_photo_path || currentReturn.goods_photo_path;
+
+      document.getElementById('modalContent').innerHTML = `
+        <label>Kho</label>
+        <select id="editReturnWarehouse">${whOptions}</select>
+        <label>Mã đơn hàng</label>
+        <input type="text" id="editReturnOrderCode" value="${(currentReturn.order_code || '').replace(/"/g, '&quot;')}" />
+        <label>Tên khách hàng</label>
+        <input type="text" id="editReturnCustomerName" value="${(currentReturn.customer_name || '').replace(/"/g, '&quot;')}" />
+        <label>Ghi chú</label>
+        <textarea id="editReturnNote">${currentReturn.note || ''}</textarea>
+        ${hasAnyPhoto ? `
+          <p class="hint" style="margin-top:10px;">Nếu ảnh bị lỡ đăng nhầm ô (ví dụ thủ kho chụp hàng thực trả nhưng lại lưu vào ô "Phiếu trả hàng"), bấm nút dưới để đổi ngược lại 2 ô ảnh cho đúng.</p>
+          <button type="button" class="btn secondary" style="margin:0;" onclick="swapReturnPhotoSlots()">🔄 Đổi ngược vai trò 2 ảnh</button>
+        ` : ''}
+        <div style="display:flex; gap:10px; margin-top:14px;">
+          <button class="btn" style="margin:0; flex:1;" onclick="submitEditReturn()">💾 Lưu thay đổi</button>
+          <button class="btn secondary" style="margin:0; flex:1;" onclick="openReturn(${currentReturn.id})">Hủy</button>
+        </div>
+        <div id="actionMsg"></div>
+      `;
+    }
+
+    async function submitEditReturn() {
+      const msg = document.getElementById('actionMsg');
+      const customerName = document.getElementById('editReturnCustomerName').value.trim();
+      if (!customerName) {
+        msg.className = 'error-msg';
+        msg.textContent = 'Vui lòng nhập tên khách hàng.';
+        return;
+      }
+      try {
+        await apiFetch(`/api/returns/${currentReturn.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            warehouse_id: document.getElementById('editReturnWarehouse').value,
+            order_code: document.getElementById('editReturnOrderCode').value.trim(),
+            customer_name: customerName,
+            note: document.getElementById('editReturnNote').value.trim(),
+          }),
+        });
+        showToast('✅ Đã lưu thay đổi phiếu trả hàng.');
+        loadReturns();
+        openReturn(currentReturn.id);
+      } catch (err) {
+        msg.className = 'error-msg';
+        msg.textContent = err.message;
+      }
+    }
+
+    async function swapReturnPhotoSlots() {
+      if (!currentReturn) return;
+      if (!confirm('Đổi ngược ảnh "Phiếu trả hàng" và "Hàng thực trả" cho phiếu này?')) return;
+      const msg = document.getElementById('actionMsg');
+      try {
+        await apiFetch(`/api/returns/${currentReturn.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ swap_photo_slots: true }),
+        });
+        showToast('✅ Đã đổi ngược vai trò 2 ảnh.');
+        loadReturns();
+        openReturn(currentReturn.id);
       } catch (err) {
         msg.className = 'error-msg';
         msg.textContent = err.message;

@@ -152,6 +152,68 @@ router.post('/:id/voucher-photo', requireAuth, requireRole('sales', 'leader'), u
   res.json({ return: updated });
 });
 
+// ============ SUA thong tin phieu tra hang (CHI ADMIN/QUAN LY) ============
+// Dung khi lo dang nham anh o SAI vai tro (vi du thu kho chup hang thuc tra nhung lai luu vao o
+// "phieu trả hang" cua Sales, hoac nguoc lai) - hoac can sua nhanh ten khach/kho/ma don/ghi chu.
+router.patch('/:id', requireAuth, requireRole('leader'), (req, res) => {
+  const ret = db.prepare('SELECT * FROM returns WHERE id = ?').get(req.params.id);
+  if (!ret) return res.status(404).json({ error: 'Khong tim thay phieu tra hang.' });
+
+  const { customer_name, order_code, note, warehouse_id, swap_photo_slots } = req.body || {};
+  const updates = [];
+  const params = [];
+
+  if (typeof customer_name === 'string' && customer_name.trim()) {
+    updates.push('customer_name = ?');
+    params.push(customer_name.trim());
+    db.prepare('INSERT OR IGNORE INTO customers (name) VALUES (?)').run(customer_name.trim());
+  }
+  if (typeof order_code === 'string') {
+    updates.push('order_code = ?');
+    params.push(order_code.trim() || null);
+  }
+  if (typeof note === 'string') {
+    updates.push('note = ?');
+    params.push(note);
+  }
+  if (warehouse_id) {
+    const wh = db.prepare('SELECT * FROM warehouses WHERE id = ? AND is_active = 1').get(warehouse_id);
+    if (!wh) return res.status(400).json({ error: 'Kho khong hop le.' });
+    updates.push('warehouse_id = ?');
+    params.push(warehouse_id);
+  }
+
+  // Doi nguoc vai tro 2 anh: anh dang o o "phieu tra hang" chuyen sang "hang thuc tra" va nguoc
+  // lai, roi tinh lai trang thai cho dung theo o anh nao con/moi co sau khi doi.
+  if (swap_photo_slots) {
+    const newVoucher = ret.goods_photo_path;
+    const newGoods = ret.voucher_photo_path;
+    if (!newVoucher && !newGoods) {
+      return res.status(400).json({ error: 'Phieu nay chua co anh nao de doi.' });
+    }
+    const newStatus = newVoucher && newGoods ? 'hoan_tat' : newVoucher ? 'cho_kho_xac_nhan' : 'cho_sales_xac_nhan';
+    updates.push('voucher_photo_path = ?', 'goods_photo_path = ?', 'status = ?');
+    params.push(newVoucher, newGoods, newStatus);
+  }
+
+  if (updates.length === 0) return res.status(400).json({ error: 'Khong co gi de cap nhat.' });
+
+  updates.push("updated_at = datetime('now')");
+  params.push(ret.id);
+  db.prepare(`UPDATE returns SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+
+  const updated = db.prepare('SELECT r.*, w.name AS warehouse_name FROM returns r LEFT JOIN warehouses w ON w.id = r.warehouse_id WHERE r.id = ?').get(ret.id);
+
+  broadcast('return_updated', {
+    return_id: updated.id,
+    customer_name: updated.customer_name,
+    warehouse_id: updated.warehouse_id,
+    status: updated.status,
+  });
+
+  res.json({ return: updated });
+});
+
 // ============ Danh sach phieu tra hang (co loc) ============
 router.get('/', requireAuth, (req, res) => {
   const { status, customer, warehouse_id } = req.query;
