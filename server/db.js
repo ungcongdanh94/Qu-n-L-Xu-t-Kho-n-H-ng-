@@ -128,58 +128,77 @@ function columnExists(table, column) {
   return cols.some((c) => c.name === column);
 }
 
-if (!columnExists('users', 'warehouse_id')) {
-  db.exec('ALTER TABLE users ADD COLUMN warehouse_id INTEGER REFERENCES warehouses(id)');
+try {
+  if (!columnExists('users', 'warehouse_id')) {
+    db.exec('ALTER TABLE users ADD COLUMN warehouse_id INTEGER REFERENCES warehouses(id)');
+  }
+  if (!columnExists('users', 'is_active')) {
+    db.exec('ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1');
+  }
+  if (!columnExists('orders', 'warehouse_id')) {
+    db.exec('ALTER TABLE orders ADD COLUMN warehouse_id INTEGER REFERENCES warehouses(id)');
+  }
+  if (!columnExists('orders', 'order_type')) {
+    db.exec("ALTER TABLE orders ADD COLUMN order_type TEXT NOT NULL DEFAULT 'xuat_kho'");
+  }
+  if (!columnExists('orders', 'order_code')) {
+    db.exec('ALTER TABLE orders ADD COLUMN order_code TEXT');
+  }
+  if (!columnExists('users', 'roles')) {
+    db.exec("ALTER TABLE users ADD COLUMN roles TEXT NOT NULL DEFAULT '[]'");
+  }
+  // Chuyen du lieu vai tro CU (1 vai tro duy nhat) sang dang danh sach nhieu vai tro,
+  // de tuong thich voi tai khoan da tao truoc khi co tinh nang nay.
+  db.exec(`
+    UPDATE users SET roles = '["' || role || '"]'
+    WHERE roles = '[]' OR roles IS NULL
+  `);
+  if (!columnExists('users', 'permissions')) {
+    db.exec("ALTER TABLE users ADD COLUMN permissions TEXT NOT NULL DEFAULT '[]'");
+  }
+  if (!columnExists('order_photos', 'warehouse_id')) {
+    db.exec('ALTER TABLE order_photos ADD COLUMN warehouse_id INTEGER REFERENCES warehouses(id)');
+  }
+  // Tao index cho order_photos.warehouse_id O DAY (sau khi chac chan cot da ton tai), tranh loi
+  // "no such column" tren cac database cu (da co bang order_photos truoc khi co tinh nang nay).
+  db.exec('CREATE INDEX IF NOT EXISTS idx_order_photos_warehouse ON order_photos(warehouse_id)');
+} catch (err) {
+  console.error('[migration] Loi khi cap nhat cau truc bang (cot/index):', err.message);
 }
-if (!columnExists('users', 'is_active')) {
-  db.exec('ALTER TABLE users ADD COLUMN is_active INTEGER NOT NULL DEFAULT 1');
-}
-if (!columnExists('orders', 'warehouse_id')) {
-  db.exec('ALTER TABLE orders ADD COLUMN warehouse_id INTEGER REFERENCES warehouses(id)');
-}
-if (!columnExists('orders', 'order_type')) {
-  db.exec("ALTER TABLE orders ADD COLUMN order_type TEXT NOT NULL DEFAULT 'xuat_kho'");
-}
-if (!columnExists('orders', 'order_code')) {
-  db.exec('ALTER TABLE orders ADD COLUMN order_code TEXT');
-}
-if (!columnExists('users', 'roles')) {
-  db.exec("ALTER TABLE users ADD COLUMN roles TEXT NOT NULL DEFAULT '[]'");
-}
-// Chuyen du lieu vai tro CU (1 vai tro duy nhat) sang dang danh sach nhieu vai tro,
-// de tuong thich voi tai khoan da tao truoc khi co tinh nang nay.
-db.exec(`
-  UPDATE users SET roles = '["' || role || '"]'
-  WHERE roles = '[]' OR roles IS NULL
-`);
-if (!columnExists('users', 'permissions')) {
-  db.exec("ALTER TABLE users ADD COLUMN permissions TEXT NOT NULL DEFAULT '[]'");
-}
-if (!columnExists('order_photos', 'warehouse_id')) {
-  db.exec('ALTER TABLE order_photos ADD COLUMN warehouse_id INTEGER REFERENCES warehouses(id)');
-}
-// Tao index cho order_photos.warehouse_id O DAY (sau khi chac chan cot da ton tai), tranh loi
-// "no such column" tren cac database cu (da co bang order_photos truoc khi co tinh nang nay).
-db.exec('CREATE INDEX IF NOT EXISTS idx_order_photos_warehouse ON order_photos(warehouse_id)');
 
 // Khoi tao bang order_warehouses tu du lieu don hang CU (truoc khi co tinh nang nhieu kho),
 // de cac don hang cu van hien thi va hoat dong binh thuong voi logic moi.
-// An toan de chay lai nhieu lan: chi them neu (order_id, warehouse_id) chua ton tai.
-const legacyOrders = db
-  .prepare('SELECT id, warehouse_id, status FROM orders WHERE warehouse_id IS NOT NULL')
-  .all();
-const insertOrderWarehouse = db.prepare(
-  'INSERT OR IGNORE INTO order_warehouses (order_id, warehouse_id, status) VALUES (?, ?, ?)'
-);
-for (const o of legacyOrders) {
-  insertOrderWarehouse.run(o.id, o.warehouse_id, o.status);
+// QUAN TRONG VE HIEU NANG: chi lay cac don CHUA CO trong order_warehouses (dung NOT EXISTS),
+// khong quet lai toan bo bang orders moi lan khoi dong - neu khong, khi so luong don hang
+// tang len theo thoi gian, buoc nay se ngay cang cham va co the lam server khoi dong lau/timeout.
+try {
+  const legacyOrders = db
+    .prepare(
+      `SELECT o.id, o.warehouse_id, o.status FROM orders o
+       WHERE o.warehouse_id IS NOT NULL
+       AND NOT EXISTS (
+         SELECT 1 FROM order_warehouses ow WHERE ow.order_id = o.id AND ow.warehouse_id = o.warehouse_id
+       )`
+    )
+    .all();
+  if (legacyOrders.length > 0) {
+    const insertOrderWarehouse = db.prepare(
+      'INSERT OR IGNORE INTO order_warehouses (order_id, warehouse_id, status) VALUES (?, ?, ?)'
+    );
+    for (const o of legacyOrders) {
+      insertOrderWarehouse.run(o.id, o.warehouse_id, o.status);
+    }
+    console.log(`[migration] Da dong bo ${legacyOrders.length} don hang cu vao order_warehouses.`);
+  }
+  // Gan warehouse_id cho cac anh "packed"/"return" cu (truoc khi co da-kho) theo dung kho cua don
+  db.exec(`
+    UPDATE order_photos
+    SET warehouse_id = (SELECT warehouse_id FROM orders WHERE orders.id = order_photos.order_id)
+    WHERE warehouse_id IS NULL AND type IN ('packed', 'return')
+  `);
+} catch (err) {
+  console.error('[migration] Loi khi dong bo du lieu don hang cu:', err.message);
 }
-// Gan warehouse_id cho cac anh "packed"/"return" cu (truoc khi co da-kho) theo dung kho cua don
-db.exec(`
-  UPDATE order_photos
-  SET warehouse_id = (SELECT warehouse_id FROM orders WHERE orders.id = order_photos.order_id)
-  WHERE warehouse_id IS NULL AND type IN ('packed', 'return')
-`);
 
 // Doi ten kho mac dinh cho khop ten thuc te cong ty dang dung (chi doi neu ten moi chua ton tai,
 // tranh vi pham UNIQUE va tranh ghi de neu nguoi dung da tu doi ten khac roi)
@@ -190,7 +209,11 @@ function renameWarehouseIfNeeded(oldName, newName) {
     db.prepare('UPDATE warehouses SET name = ? WHERE id = ?').run(newName, oldRow.id);
   }
 }
-renameWarehouseIfNeeded('Kho 1', 'Kho Tổng');
-renameWarehouseIfNeeded('Kho 2', 'Kho XINGFA');
+try {
+  renameWarehouseIfNeeded('Kho 1', 'Kho Tổng');
+  renameWarehouseIfNeeded('Kho 2', 'Kho XINGFA');
+} catch (err) {
+  console.error('[migration] Loi khi doi ten kho mac dinh:', err.message);
+}
 
 module.exports = db;
