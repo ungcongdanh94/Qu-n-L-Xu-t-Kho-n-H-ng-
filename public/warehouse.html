@@ -146,14 +146,26 @@
       currentOrder = data.order;
       document.getElementById("modalTitle").textContent = `Đơn: ${orderDisplayName(data.order)}`;
 
+      const canReassignPhotoWarehouse = hasUserRole(user, 'leader') && (data.order.warehouses || []).length > 1;
       const photosHtml = data.photos
-        .map(
-          (p) => `
+        .map((p) => {
+          const reassignHtml =
+            canReassignPhotoWarehouse && p.type !== 'order'
+              ? `<select style="font-size:11px; margin-top:4px; padding:3px;" onchange="reassignPhotoWarehouse(${p.id}, this.value)">
+                   <option value="">🔄 Đổi kho...</option>
+                   ${(data.order.warehouses || [])
+                     .filter((w) => w.warehouse_id !== p.warehouse_id)
+                     .map((w) => `<option value="${w.warehouse_id}">${w.warehouse_name}</option>`)
+                     .join('')}
+                 </select>`
+              : '';
+          return `
         <div>
           <img src="/uploads/${p.photo_path}" onclick="openImageViewer('/uploads/${p.photo_path}')" loading="lazy" />
           <div class="label">${{ order: 'Đơn gốc', packed: 'Đã giao hàng', return: 'Hàng trả' }[p.type]}${p.warehouse_name ? ' - ' + p.warehouse_name : ''}</div>
-        </div>`
-        )
+          ${reassignHtml}
+        </div>`;
+        })
         .join('');
 
       const warehousesBreakdown = renderWarehouseChips(data.order.warehouses, data.order.order_type);
@@ -210,6 +222,27 @@
         <div id="deleteMsgWarehouse"></div>` : ''}
       `;
       document.getElementById('modalOverlay').style.display = 'flex';
+    }
+
+    async function reassignPhotoWarehouse(photoId, newWarehouseId) {
+      if (!newWarehouseId || !currentOrder) return;
+      const wh = (currentOrder.warehouses || []).find((w) => String(w.warehouse_id) === String(newWarehouseId));
+      if (!confirm(`Đổi ảnh này sang "${wh ? wh.warehouse_name : 'kho khác'}"?`)) {
+        openOrder(currentOrder.id);
+        return;
+      }
+      try {
+        await apiFetch(`/api/orders/${currentOrder.id}/photos/${photoId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ warehouse_id: newWarehouseId }),
+        });
+        showToast('✅ Đã đổi kho cho ảnh này.');
+        loadOrders();
+        openOrder(currentOrder.id);
+      } catch (err) {
+        alert(err.message);
+        openOrder(currentOrder.id);
+      }
     }
 
     async function deleteCurrentOrderWarehouse() {

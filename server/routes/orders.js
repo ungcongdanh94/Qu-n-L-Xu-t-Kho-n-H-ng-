@@ -317,6 +317,86 @@ router.patch('/:id', requireAuth, (req, res) => {
   res.json({ order: updated });
 });
 
+// ============ SUA lai kho cua 1 anh xac nhan da dang NHAM (CHI QUAN LY) ============
+// Dung khi lo chon nham kho luc tai anh len (vi du don co 2 kho, chon nham kho A trong khi
+// dinh xac nhan cho kho B). Chuyen anh sang dung kho, tinh lai trang thai CA 2 kho lien quan:
+// - Kho CU (bi rut anh ra): neu khong con anh xac nhan nao khac, tro lai "cho soan hang".
+// - Kho MOI (duoc gan anh vao): danh dau da xac nhan nhu vua moi upload xong.
+router.patch('/:id/photos/:photoId', requireAuth, requireRole('leader'), (req, res) => {
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
+  if (!order) return res.status(404).json({ error: 'Khong tim thay don hang.' });
+
+  const photo = db.prepare('SELECT * FROM order_photos WHERE id = ? AND order_id = ?').get(req.params.photoId, order.id);
+  if (!photo) return res.status(404).json({ error: 'Khong tim thay hinh anh nay.' });
+  if (photo.type === 'order') {
+    return res.status(400).json({ error: 'Khong the doi kho cho anh don goc.' });
+  }
+
+  const newWarehouseId = parseInt(req.body.warehouse_id, 10);
+  if (!newWarehouseId) return res.status(400).json({ error: 'Vui long chon kho moi.' });
+  if (newWarehouseId === photo.warehouse_id) {
+    return res.status(400).json({ error: 'Anh nay dang thuoc dung kho nay roi.' });
+  }
+
+  const newOw = db.prepare('SELECT * FROM order_warehouses WHERE order_id = ? AND warehouse_id = ?').get(order.id, newWarehouseId);
+  if (!newOw) return res.status(400).json({ error: 'Kho nay khong duoc gan vao don hang nay.' });
+
+  const oldWarehouseId = photo.warehouse_id;
+
+  db.prepare('UPDATE order_photos SET warehouse_id = ? WHERE id = ?').run(newWarehouseId, photo.id);
+
+  // Kho MOI: danh dau da xac nhan (theo dung loai anh: packed -> da_soan, return -> co_hang_tra)
+  const newStatus = photo.type === 'return' ? 'co_hang_tra' : 'da_soan';
+  db.prepare(
+    `UPDATE order_warehouses SET status = ?, confirmed_by_username = ?, confirmed_at = datetime('now') WHERE id = ?`
+  ).run(newStatus, req.user.username, newOw.id);
+
+  // Kho CU: neu khong con anh packed/return nao khac gan cho kho nay trong don nay, tro lai
+  // "cho soan hang" (huy trang thai da xac nhan nham).
+  if (oldWarehouseId) {
+    const remainingPhotos = db
+      .prepare(
+        `SELECT type FROM order_photos WHERE order_id = ? AND warehouse_id = ? AND type IN ('packed','return')`
+      )
+      .all(order.id, oldWarehouseId);
+    const oldOw = db.prepare('SELECT * FROM order_warehouses WHERE order_id = ? AND warehouse_id = ?').get(order.id, oldWarehouseId);
+    if (oldOw) {
+      if (remainingPhotos.length === 0) {
+        db.prepare(
+          `UPDATE order_warehouses SET status = 'cho_soan', confirmed_by_username = NULL, confirmed_at = NULL WHERE id = ?`
+        ).run(oldOw.id);
+      } else {
+        // Van con anh khac cho kho cu - giu trang thai theo loai anh con lai gan nhat
+        const stillHasReturn = remainingPhotos.some((p) => p.type === 'return');
+        db.prepare(`UPDATE order_warehouses SET status = ? WHERE id = ?`).run(
+          stillHasReturn ? 'co_hang_tra' : 'da_soan',
+          oldOw.id
+        );
+      }
+    }
+  }
+
+  const allStatuses = db.prepare('SELECT status FROM order_warehouses WHERE order_id = ?').all(order.id).map((r) => r.status);
+  const aggregateStatus = computeAggregateStatus(allStatuses);
+  db.prepare(`UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?`).run(aggregateStatus, order.id);
+
+  const updatedOrder = db.prepare('SELECT * FROM orders WHERE id = ?').get(order.id);
+  updatedOrder.warehouses = getOrderWarehouses(order.id);
+
+  broadcast('order_updated', {
+    order_id: order.id,
+    customer_name: updatedOrder.customer_name,
+    order_type: updatedOrder.order_type,
+    warehouse_id: newWarehouseId,
+    warehouse_status: newStatus,
+    overall_status: aggregateStatus,
+    sales_user_id: updatedOrder.sales_user_id,
+    updated_by: req.user.username,
+  });
+
+  res.json({ order: updatedOrder });
+});
+
 // ============ THU KHO: upload hinh da giao hang hoac hang tra - CHO DUNG KHO cua minh ============
 router.post(
   '/:id/photos',
