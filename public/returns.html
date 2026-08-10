@@ -24,10 +24,6 @@
         <option value="">-- Chọn kho --</option>
       </select>
 
-      <label>Mã đơn hàng (tuỳ chọn - chọn đúng mã sẽ tự điền tên khách)</label>
-      <input type="text" id="orderCodeInput" placeholder="Ví dụ: BH83746" list="orderCodeList" oninput="onOrderCodeInput()" />
-      <datalist id="orderCodeList"></datalist>
-
       <label>Tên khách hàng</label>
       <input type="text" id="customerName" placeholder="Nhập tên khách hàng..." list="customerList" />
       <datalist id="customerList"></datalist>
@@ -35,17 +31,8 @@
       <label>Ghi chú (tuỳ chọn)</label>
       <textarea id="note" placeholder="Ví dụ: lý do trả hàng, số lượng, tình trạng hàng..."></textarea>
 
-      <div id="photoTypeToggle" style="display:none; margin-bottom:10px;">
-        <label style="display:inline-flex; align-items:center; gap:6px; margin-right:16px; font-weight:400; margin-bottom:4px;">
-          <input type="radio" name="photoType" value="voucher" checked onchange="onPhotoTypeChange()" /> 📄 Tôi có ảnh phiếu trả hàng (vai trò Sales)
-        </label>
-        <label style="display:inline-flex; align-items:center; gap:6px; font-weight:400;">
-          <input type="radio" name="photoType" value="goods" onchange="onPhotoTypeChange()" /> 📦 Tôi có ảnh hàng thực trả (vai trò Thủ kho)
-        </label>
-      </div>
-
-      <div id="photoSection">
-        <label id="photoLabel"></label>
+      <div id="photoSection" style="display:none;">
+        <label>Hình xác nhận hàng trả (chụp ngay khi khách trả tại kho)</label>
         <div style="display:flex; gap:8px; margin-top:6px; margin-bottom:6px;">
           <button type="button" class="btn secondary" style="margin:0; flex:1;" onclick="document.getElementById('photoInputCamera').click()">📷 Chụp ảnh</button>
         </div>
@@ -66,8 +53,8 @@
       <div class="filters">
         <select id="statusFilter" onchange="loadReturns()">
           <option value="">Tất cả trạng thái</option>
-          <option value="cho_kho_xac_nhan">Chờ kho gửi ảnh hàng thực trả</option>
-          <option value="cho_sales_xac_nhan">Chờ sales gửi ảnh phiếu trả hàng</option>
+          <option value="cho_kho_xac_nhan">Chờ kho chụp hình</option>
+          <option value="cho_sales_xac_nhan">Chờ sales xác nhận</option>
           <option value="hoan_tat">Hoàn tất</option>
         </select>
         <select id="warehouseFilter" onchange="loadReturns()" style="display:none;"></select>
@@ -93,35 +80,14 @@
     let selectedFile = null;
     let currentReturn = null;
 
-    // Thiet ke: Sales (vai tro CHINH) luon dinh kem anh PHIEU tra hang; Thu kho luon dinh kem anh
-    // HANG THUC TRA - khong phu thuoc ai lap phieu truoc, ca 2 phia deu BAT BUOC co dung 1 loai anh
-    // cua minh. Tai khoan chi giu 1 trong 2 vai tro se duoc co dinh loai anh tuong ung; tai khoan
-    // kiem ca 2 (hoac Quan ly khong giu vai tro nao) duoc chon loai anh qua nut radio.
-    const hasSalesRole = hasUserRole(user, 'sales');
-    const hasWarehouseRole = hasUserRole(user, 'warehouse');
-    let currentPhotoType = hasSalesRole ? 'voucher' : hasWarehouseRole ? 'goods' : 'voucher';
-    const showPhotoTypeToggle = !((hasSalesRole && !hasWarehouseRole) || (hasWarehouseRole && !hasSalesRole));
-    if (showPhotoTypeToggle) {
-      document.getElementById('photoTypeToggle').style.display = '';
-      document.querySelector(`input[name="photoType"][value="${currentPhotoType}"]`).checked = true;
-    }
-
-    function updatePhotoLabel() {
-      document.getElementById('photoLabel').textContent =
-        currentPhotoType === 'voucher' ? '📄 Ảnh phiếu trả hàng (bắt buộc)' : '📦 Ảnh hàng thực trả (bắt buộc)';
-    }
-    function onPhotoTypeChange() {
-      currentPhotoType = document.querySelector('input[name="photoType"]:checked').value;
-      updatePhotoLabel();
-    }
-    updatePhotoLabel();
-
+    // Chi thu kho / quan ly moi duoc dinh kem hinh ngay luc lap phieu
+    // (truong hop khach tra hang truc tiep tai kho, kho lap phieu va chup hinh luon)
+    const canAttachPhotoOnCreate = hasUserRole(user, 'warehouse') || hasUserRole(user, 'leader');
+    document.getElementById('photoSection').style.display = canAttachPhotoOnCreate ? '' : 'none';
     document.getElementById('roleHint').textContent =
-      currentPhotoType === 'voucher' && !showPhotoTypeToggle
-        ? 'Đính kèm ảnh phiếu trả hàng. Thủ kho sẽ gửi ảnh hàng thực trả để hoàn tất khi nhận được hàng.'
-        : !showPhotoTypeToggle
-        ? 'Nếu khách trả hàng trực tiếp tại kho: đính kèm ảnh hàng thực trả ngay bên dưới. Sales sẽ gửi ảnh phiếu trả hàng để hoàn tất.'
-        : 'Chọn đúng loại ảnh bạn đang có ở trên (phiếu trả hàng hoặc hàng thực trả), rồi đính kèm bên dưới.';
+      hasUserRole(user, 'sales')
+        ? 'Dùng khi khách báo trước sẽ trả hàng: điền thông tin bên dưới, thủ kho sẽ chụp hình xác nhận khi nhận được hàng trả.'
+        : 'Nếu khách trả hàng trực tiếp tại kho: chụp hình xác nhận ngay bên dưới, sales sẽ xác nhận đã tiếp nhận thông tin. Nếu chỉ mới nhận thông báo (chưa có hàng), có thể để trống hình, sales sẽ theo dõi và kho chụp hình khi hàng về sau.';
 
     function onPhotoSelected(e) {
       const file = e.target.files[0];
@@ -132,23 +98,6 @@
       preview.style.display = 'block';
       document.getElementById('dropText').textContent = 'Nhấn để chọn hình khác';
     }
-
-    // Cho phep dan anh bang Ctrl+V (copy tu Zalo, Excel, anh chup man hinh...) - anh gio la bat
-    // buoc voi ca 2 phia (Sales & Thu kho) nen luon bat, khong con dieu kien theo vai tro nua.
-    document.addEventListener('paste', (e) => {
-      const items = e.clipboardData && e.clipboardData.items;
-      if (!items) return;
-      for (const item of items) {
-        if (item.type && item.type.startsWith('image/')) {
-          const file = item.getAsFile();
-          if (file) {
-            e.preventDefault();
-            onPhotoSelected({ target: { files: [file] } });
-          }
-          break;
-        }
-      }
-    });
 
     async function loadWarehouses() {
       const data = await apiFetch('/api/warehouses');
@@ -170,45 +119,8 @@
       } catch (err) {}
     }
 
-    // Goi y ma don hang khi go, va tu dien ten khach khi go/chon DUNG 1 ma da co - de sales/thu kho
-    // khong phai nho lai hoac go tay ten khach, giam sai sot chinh ta ten.
-    let orderCodeLookupCache = {};
-    let orderCodeLookupTimer = null;
-
-    function tryAutoFillFromOrderCode() {
-      const val = document.getElementById('orderCodeInput').value.trim();
-      const key = Object.keys(orderCodeLookupCache).find((k) => k.toLowerCase() === val.toLowerCase());
-      if (key) document.getElementById('customerName').value = orderCodeLookupCache[key];
-    }
-
-    function onOrderCodeInput() {
-      tryAutoFillFromOrderCode();
-      if (orderCodeLookupTimer) clearTimeout(orderCodeLookupTimer);
-      const val = document.getElementById('orderCodeInput').value.trim();
-      if (val.length < 2) {
-        document.getElementById('orderCodeList').innerHTML = '';
-        return;
-      }
-      orderCodeLookupTimer = setTimeout(async () => {
-        try {
-          const data = await apiFetch(`/api/orders/lookup-by-code?code=${encodeURIComponent(val)}`);
-          orderCodeLookupCache = {};
-          document.getElementById('orderCodeList').innerHTML = data.orders
-            .map((o) => {
-              orderCodeLookupCache[o.order_code] = o.customer_name;
-              return `<option value="${o.order_code}">${o.customer_name}</option>`;
-            })
-            .join('');
-          tryAutoFillFromOrderCode();
-        } catch (err) {
-          // Mat mang tam thoi - bo qua, sales van tu nhap ten khach binh thuong duoc
-        }
-      }, 300);
-    }
-
     async function submitReturn() {
       const warehouseId = document.getElementById('warehouseSelect').value;
-      const orderCode = document.getElementById('orderCodeInput').value.trim();
       const customerName = document.getElementById('customerName').value.trim();
       const note = document.getElementById('note').value.trim();
       const msg = document.getElementById('msg');
@@ -217,33 +129,23 @@
 
       if (!warehouseId) { msg.className = 'error-msg'; msg.textContent = 'Vui lòng chọn kho.'; return; }
       if (!customerName) { msg.className = 'error-msg'; msg.textContent = 'Vui lòng nhập tên khách hàng.'; return; }
-      if (!selectedFile) {
-        msg.className = 'error-msg';
-        msg.textContent = currentPhotoType === 'voucher' ? 'Vui lòng đính kèm ảnh phiếu trả hàng.' : 'Vui lòng đính kèm ảnh hàng thực trả.';
-        return;
-      }
 
       const form = new FormData();
       form.append('warehouse_id', warehouseId);
-      if (orderCode) form.append('order_code', orderCode);
       form.append('customer_name', customerName);
       if (note) form.append('note', note);
-      form.append('photo_type', currentPhotoType);
-      form.append('photo', selectedFile);
+      if (canAttachPhotoOnCreate && selectedFile) form.append('photo', selectedFile);
 
       try {
         await apiFetch('/api/returns', { method: 'POST', body: form });
         msg.className = 'success-msg';
         msg.textContent = '✅ Đã lập phiếu trả hàng thành công!';
-        document.getElementById('orderCodeInput').value = '';
-        document.getElementById('orderCodeList').innerHTML = '';
-        orderCodeLookupCache = {};
         document.getElementById('customerName').value = '';
         document.getElementById('note').value = '';
         selectedFile = null;
         document.getElementById('photoInput').value = '';
         document.getElementById('preview').style.display = 'none';
-        document.getElementById('dropText').textContent = '🖼️ Nhấn để chọn ảnh có sẵn (hoặc dán ảnh bằng Ctrl+V)';
+        document.getElementById('dropText').textContent = '📷 Nhấn để chụp / chọn hình';
         loadReturns();
         loadCustomerSuggestions();
       } catch (err) {
@@ -270,9 +172,9 @@
           .map(
             (r) => `
           <div class="order-item" onclick="openReturn(${r.id})">
-            ${(r.voucher_photo_path || r.goods_photo_path) ? `<img src="/uploads/${r.voucher_photo_path || r.goods_photo_path}" onclick="event.stopPropagation(); openImageViewer('/uploads/${r.voucher_photo_path || r.goods_photo_path}')" />` : '<div style="width:64px;height:64px;background:#f1f1f1;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:11px;">Chưa có hình</div>'}
+            ${r.photo_path ? `<img src="/uploads/${r.photo_path}" onclick="event.stopPropagation(); openImageViewer('/uploads/${r.photo_path}')" />` : '<div style="width:64px;height:64px;background:#f1f1f1;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:11px;">Chưa có hình</div>'}
             <div class="info">
-              <div class="name">${r.customer_name}${r.order_code ? ` <span style="color:var(--muted); font-weight:400; font-size:12px;">(${r.order_code})</span>` : ''}</div>
+              <div class="name">${r.customer_name}</div>
               <div class="meta">
                 <span class="badge ${r.status}">${statusLabel(r.status)}</span>
                 &nbsp;·&nbsp; ${r.warehouse_name || ''} &nbsp;·&nbsp; Lập bởi: ${r.initiated_by_username} &nbsp;·&nbsp; ${formatDateTime(r.created_at)}
@@ -294,155 +196,34 @@
       let actionHtml = '';
       if (currentReturn.status === 'cho_kho_xac_nhan' && (hasUserRole(user, 'warehouse') || hasUserRole(user, 'leader'))) {
         actionHtml = `
-          <label>📦 Gửi ảnh hàng thực trả để hoàn tất</label>
+          <label>Chụp hình xác nhận đã nhận hàng trả</label>
           <div style="display:flex; gap:8px; margin-top:6px;">
             <button type="button" class="btn secondary" style="margin:0; flex:1;" onclick="document.getElementById('confirmPhotoCamera').click()">📷 Chụp ảnh</button>
             <button type="button" class="btn secondary" style="margin:0; flex:1;" onclick="document.getElementById('confirmPhotoGallery').click()">🖼️ Chọn ảnh có sẵn</button>
           </div>
-          <input type="file" accept="image/*" capture="environment" id="confirmPhotoCamera" style="display:none" onchange="confirmWithGoodsPhoto(this)" />
-          <input type="file" accept="image/*" id="confirmPhotoGallery" style="display:none" onchange="confirmWithGoodsPhoto(this)" />
+          <input type="file" accept="image/*" capture="environment" id="confirmPhotoCamera" style="display:none" onchange="confirmWithPhoto(this)" />
+          <input type="file" accept="image/*" id="confirmPhotoGallery" style="display:none" onchange="confirmWithPhoto(this)" />
         `;
       } else if (currentReturn.status === 'cho_sales_xac_nhan' && (hasUserRole(user, 'sales') || hasUserRole(user, 'leader'))) {
-        actionHtml = `
-          <label>📄 Gửi ảnh phiếu trả hàng để hoàn tất</label>
-          <div style="display:flex; gap:8px; margin-top:6px;">
-            <button type="button" class="btn secondary" style="margin:0; flex:1;" onclick="document.getElementById('confirmVoucherCamera').click()">📷 Chụp ảnh</button>
-            <button type="button" class="btn secondary" style="margin:0; flex:1;" onclick="document.getElementById('confirmVoucherGallery').click()">🖼️ Chọn ảnh có sẵn</button>
-          </div>
-          <input type="file" accept="image/*" capture="environment" id="confirmVoucherCamera" style="display:none" onchange="confirmWithVoucherPhoto(this)" />
-          <input type="file" accept="image/*" id="confirmVoucherGallery" style="display:none" onchange="confirmWithVoucherPhoto(this)" />
-        `;
+        actionHtml = `<button class="btn" onclick="confirmBySales()">✅ Xác nhận đã tiếp nhận thông tin</button>`;
       }
-
-      const canDelete =
-        hasUserRole(user, 'leader') ||
-        hasUserPermission(user, 'delete_any_order') ||
-        (currentReturn.initiated_by_username === user.username && currentReturn.status !== 'hoan_tat');
-      const canManageAdmin = hasUserRole(user, 'leader');
-
-      const photoSlotHtml = (label, path) => `
-        <div style="flex:1; min-width:140px;">
-          <div class="hint" style="margin-bottom:4px; font-weight:600;">${label}</div>
-          ${path
-            ? `<img src="/uploads/${path}" style="max-width:100%;border-radius:8px;cursor:pointer;" onclick="openImageViewer('/uploads/${path}')" />`
-            : '<p class="hint">Chưa có.</p>'}
-        </div>`;
 
       document.getElementById('modalContent').innerHTML = `
         <p class="hint">
           Trạng thái: <span class="badge ${currentReturn.status}">${statusLabel(currentReturn.status)}</span><br/>
           Kho: ${currentReturn.warehouse_name || ''}<br/>
-          ${currentReturn.order_code ? `Mã đơn hàng: <b>${currentReturn.order_code}</b><br/>` : ''}
           Lập bởi: ${currentReturn.initiated_by_username} (${roleLabel(currentReturn.initiated_by_role)}) · ${formatDateTime(currentReturn.created_at)}<br/>
           ${currentReturn.confirmed_by_username ? 'Xác nhận bởi: ' + currentReturn.confirmed_by_username : ''}
         </p>
         ${currentReturn.note ? `<div class="note-box">📝 <b>Ghi chú:</b> ${currentReturn.note}</div>` : ''}
-        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:6px;">
-          ${photoSlotHtml('📄 Phiếu trả hàng (Sales)', currentReturn.voucher_photo_path)}
-          ${photoSlotHtml('📦 Hàng thực trả (Thủ kho)', currentReturn.goods_photo_path)}
-        </div>
+        ${currentReturn.photo_path ? `<img src="/uploads/${currentReturn.photo_path}" style="max-width:100%;border-radius:8px;cursor:pointer;" onclick="openImageViewer('/uploads/${currentReturn.photo_path}')" />` : '<p class="hint">Chưa có hình xác nhận.</p>'}
         ${actionHtml}
-        <div style="display:flex; gap:10px; margin-top:14px;">
-          ${canManageAdmin ? '<button class="btn secondary" style="margin:0; flex:1;" onclick="startEditReturn()">✏️ Sửa phiếu (Admin)</button>' : ''}
-          ${canDelete ? '<button class="btn danger" style="margin:0; flex:1;" onclick="deleteReturn()">🗑️ Xoá phiếu</button>' : ''}
-        </div>
         <div id="actionMsg"></div>
       `;
       document.getElementById('modalOverlay').style.display = 'flex';
     }
 
-    async function deleteReturn() {
-      if (!currentReturn) return;
-      if (!confirm(`Xoá phiếu trả hàng của "${currentReturn.customer_name}"? Hành động này không thể hoàn tác.`)) return;
-      const msg = document.getElementById('actionMsg');
-      try {
-        await apiFetch(`/api/returns/${currentReturn.id}`, { method: 'DELETE' });
-        showToast('🗑️ Đã xoá phiếu trả hàng.');
-        closeModal();
-        loadReturns();
-      } catch (err) {
-        msg.className = 'error-msg';
-        msg.textContent = err.message;
-      }
-    }
-
-    // Sua phieu - CHI ADMIN/QUAN LY. Dung khi lo dang nham anh o sai vai tro (Sales/Thu kho) hoac
-    // can sua nhanh thong tin (kho, ma don, ten khach, ghi chu).
-    async function startEditReturn() {
-      if (!currentReturn) return;
-      const whData = await apiFetch('/api/warehouses');
-      const whOptions = whData.warehouses
-        .map((w) => `<option value="${w.id}" ${w.id === currentReturn.warehouse_id ? 'selected' : ''}>${w.name}</option>`)
-        .join('');
-      const hasAnyPhoto = currentReturn.voucher_photo_path || currentReturn.goods_photo_path;
-
-      document.getElementById('modalContent').innerHTML = `
-        <label>Kho</label>
-        <select id="editReturnWarehouse">${whOptions}</select>
-        <label>Mã đơn hàng</label>
-        <input type="text" id="editReturnOrderCode" value="${(currentReturn.order_code || '').replace(/"/g, '&quot;')}" />
-        <label>Tên khách hàng</label>
-        <input type="text" id="editReturnCustomerName" value="${(currentReturn.customer_name || '').replace(/"/g, '&quot;')}" />
-        <label>Ghi chú</label>
-        <textarea id="editReturnNote">${currentReturn.note || ''}</textarea>
-        ${hasAnyPhoto ? `
-          <p class="hint" style="margin-top:10px;">Nếu ảnh bị lỡ đăng nhầm ô (ví dụ thủ kho chụp hàng thực trả nhưng lại lưu vào ô "Phiếu trả hàng"), bấm nút dưới để đổi ngược lại 2 ô ảnh cho đúng.</p>
-          <button type="button" class="btn secondary" style="margin:0;" onclick="swapReturnPhotoSlots()">🔄 Đổi ngược vai trò 2 ảnh</button>
-        ` : ''}
-        <div style="display:flex; gap:10px; margin-top:14px;">
-          <button class="btn" style="margin:0; flex:1;" onclick="submitEditReturn()">💾 Lưu thay đổi</button>
-          <button class="btn secondary" style="margin:0; flex:1;" onclick="openReturn(${currentReturn.id})">Hủy</button>
-        </div>
-        <div id="actionMsg"></div>
-      `;
-    }
-
-    async function submitEditReturn() {
-      const msg = document.getElementById('actionMsg');
-      const customerName = document.getElementById('editReturnCustomerName').value.trim();
-      if (!customerName) {
-        msg.className = 'error-msg';
-        msg.textContent = 'Vui lòng nhập tên khách hàng.';
-        return;
-      }
-      try {
-        await apiFetch(`/api/returns/${currentReturn.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({
-            warehouse_id: document.getElementById('editReturnWarehouse').value,
-            order_code: document.getElementById('editReturnOrderCode').value.trim(),
-            customer_name: customerName,
-            note: document.getElementById('editReturnNote').value.trim(),
-          }),
-        });
-        showToast('✅ Đã lưu thay đổi phiếu trả hàng.');
-        loadReturns();
-        openReturn(currentReturn.id);
-      } catch (err) {
-        msg.className = 'error-msg';
-        msg.textContent = err.message;
-      }
-    }
-
-    async function swapReturnPhotoSlots() {
-      if (!currentReturn) return;
-      if (!confirm('Đổi ngược ảnh "Phiếu trả hàng" và "Hàng thực trả" cho phiếu này?')) return;
-      const msg = document.getElementById('actionMsg');
-      try {
-        await apiFetch(`/api/returns/${currentReturn.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ swap_photo_slots: true }),
-        });
-        showToast('✅ Đã đổi ngược vai trò 2 ảnh.');
-        loadReturns();
-        openReturn(currentReturn.id);
-      } catch (err) {
-        msg.className = 'error-msg';
-        msg.textContent = err.message;
-      }
-    }
-
-    async function confirmWithGoodsPhoto(inputEl) {
+    async function confirmWithPhoto(inputEl) {
       const file = inputEl.files[0];
       if (!file || !currentReturn) return;
       const msg = document.getElementById('actionMsg');
@@ -451,9 +232,9 @@
       const form = new FormData();
       form.append('photo', file);
       try {
-        await apiFetch(`/api/returns/${currentReturn.id}/goods-photo`, { method: 'POST', body: form });
+        await apiFetch(`/api/returns/${currentReturn.id}/photo`, { method: 'POST', body: form });
         msg.className = 'success-msg';
-        msg.textContent = '✅ Đã gửi ảnh hàng thực trả, phiếu hoàn tất!';
+        msg.textContent = '✅ Đã xác nhận thành công!';
         loadReturns();
         setTimeout(() => openReturn(currentReturn.id), 600);
       } catch (err) {
@@ -462,18 +243,13 @@
       }
     }
 
-    async function confirmWithVoucherPhoto(inputEl) {
-      const file = inputEl.files[0];
-      if (!file || !currentReturn) return;
+    async function confirmBySales() {
+      if (!currentReturn) return;
       const msg = document.getElementById('actionMsg');
-      msg.className = 'hint';
-      msg.innerHTML = '<span class="spinner" style="border-top-color:var(--primary); border-color:rgba(30,95,140,0.3);"></span>Đang tải hình lên...';
-      const form = new FormData();
-      form.append('photo', file);
       try {
-        await apiFetch(`/api/returns/${currentReturn.id}/voucher-photo`, { method: 'POST', body: form });
+        await apiFetch(`/api/returns/${currentReturn.id}/confirm`, { method: 'POST' });
         msg.className = 'success-msg';
-        msg.textContent = '✅ Đã gửi ảnh phiếu trả hàng, phiếu hoàn tất!';
+        msg.textContent = '✅ Đã xác nhận tiếp nhận thông tin!';
         loadReturns();
         setTimeout(() => openReturn(currentReturn.id), 600);
       } catch (err) {

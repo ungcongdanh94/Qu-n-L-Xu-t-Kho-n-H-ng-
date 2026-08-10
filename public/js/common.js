@@ -62,10 +62,6 @@ function logout() {
     __sseConnection.close();
     __sseConnection = null;
   }
-  if (typeof __sseReconnectTimer !== 'undefined' && __sseReconnectTimer) {
-    clearTimeout(__sseReconnectTimer);
-    __sseReconnectTimer = null;
-  }
   clearSession();
   window.location.href = '/login.html';
 }
@@ -126,20 +122,13 @@ async function apiFetch(url, options = {}) {
 function roleLabel(role) {
   return { sales: 'Sales', warehouse: 'Thủ kho', leader: 'Quản lý' }[role] || role;
 }
-// Nhan hien thi cho 1 trang thai. orderType (tuy chon): khi la 'nhap_kho', doi cach goi cho dung
-// ngu canh nhap hang (Cho nhap hang / Da nhap hang) thay vi soan/giao hang cua xuat kho.
-// Khong truyen orderType (hoac 'xuat_kho') -> giu nguyen nhu cu. Dung cho ca trang thai phieu tra hang.
-function statusLabel(status, orderType) {
-  if (orderType === 'nhap_kho') {
-    if (status === 'cho_soan') return 'Chờ nhập hàng';
-    if (status === 'da_soan') return 'Đã nhập hàng';
-  }
+function statusLabel(status) {
   return {
     cho_soan: 'Chờ soạn hàng',
     da_soan: 'Đã giao hàng',
     co_hang_tra: 'Có hàng trả',
-    cho_kho_xac_nhan: 'Chờ kho gửi ảnh hàng thực trả',
-    cho_sales_xac_nhan: 'Chờ sales gửi ảnh phiếu trả hàng',
+    cho_kho_xac_nhan: 'Chờ kho chụp hình',
+    cho_sales_xac_nhan: 'Chờ sales xác nhận',
     hoan_tat: 'Hoàn tất',
   }[status] || status;
 }
@@ -155,141 +144,6 @@ function orderDisplayName(order) {
 
 function orderTypeLabel(type) {
   return { xuat_kho: 'Xuất kho', nhap_kho: 'Nhập kho' }[type] || type;
-}
-
-// Hien thi kho nhan don hang duoi dang "chip" noi bat (nen xanh nhat, chu dam) kem trang thai
-// rieng cua tung kho - de sales/thu kho nhin vao la thay ro ngay don nay thuoc kho nao,
-// khong phai doc chu nho lan trong dong meta nhu truoc. Dung chung cho danh sach va chi tiet don.
-function renderWarehouseChips(warehouses, orderType) {
-  if (!warehouses || warehouses.length === 0) return '';
-  return `<div class="warehouse-chip-row">${warehouses
-    .map(
-      (w) =>
-        `<span class="warehouse-chip">🏢 ${w.warehouse_name}<span class="badge ${w.status}">${statusLabel(w.status, orderType)}</span>${
-          w.confirmed_by_username ? `<span style="font-weight:400; opacity:0.75;">(bởi ${w.confirmed_by_username})</span>` : ''
-        }</span>`
-    )
-    .join('')}</div>`;
-}
-
-// Kiem tra 1 nguoi dung co duoc sua thong tin 1 don hang khong (khop voi logic phia server
-// trong routes/orders.js - chi dung de AN/HIEN nut "Sua don", server van tu kiem tra lai).
-function canEditOrder(user, order) {
-  const canEditAny = hasUserRole(user, 'leader') || hasUserPermission(user, 'delete_any_order');
-  if (canEditAny) return true;
-  return hasUserRole(user, 'sales') && order.sales_username === user.username && order.status === 'cho_soan';
-}
-
-// Tra ve HTML form sua thong tin don hang - dung chung cho sales.html va myorders.html.
-// canEditWarehouses = false khi da co kho xac nhan xu ly (khoa checkbox lai, chi quan ly moi doi duoc).
-function renderOrderEditForm(order, warehousesList, canEditWarehouses) {
-  const currentWhIds = (order.warehouses || []).map((w) => String(w.warehouse_id));
-  const escapeAttr = (s) => (s || '').toString().replace(/"/g, '&quot;');
-  const whHtml = (warehousesList || [])
-    .map(
-      (w) => `
-      <label style="display:flex; align-items:center; gap:8px; font-size:14px; color:var(--text); margin:0;">
-        <input type="checkbox" class="edit-warehouse-checkbox" value="${w.id}"
-          ${currentWhIds.includes(String(w.id)) ? 'checked' : ''} ${canEditWarehouses ? '' : 'disabled'}
-          style="width:18px; height:18px;" />
-        ${w.name}
-      </label>`
-    )
-    .join('');
-
-  return `
-    <label>Loại đơn</label>
-    <select id="editOrderType">
-      <option value="xuat_kho" ${order.order_type === 'xuat_kho' ? 'selected' : ''}>📤 Xuất kho</option>
-      <option value="nhap_kho" ${order.order_type === 'nhap_kho' ? 'selected' : ''}>📥 Nhập kho</option>
-    </select>
-    <label>Mã đơn hàng</label>
-    <input type="text" id="editOrderCode" value="${escapeAttr(order.order_code)}" placeholder="Ví dụ: BH83746" />
-    <label>Tên khách hàng</label>
-    <input type="text" id="editCustomerName" value="${escapeAttr(order.customer_name)}" />
-    <label>Ghi chú</label>
-    <textarea id="editNote">${order.note || ''}</textarea>
-    <label>Kho nhận đơn hàng</label>
-    <div style="display:flex; flex-direction:column; gap:8px; margin-top:6px;">
-      ${whHtml || '<span class="hint">Không có kho nào.</span>'}
-    </div>
-    ${!canEditWarehouses ? '<p class="hint">⚠️ Đã có kho xác nhận xử lý đơn này nên không tự đổi kho được — liên hệ quản lý nếu cần đổi.</p>' : ''}
-    <div style="display:flex; gap:10px; margin-top:14px;">
-      <button class="btn" style="margin:0; flex:1;" onclick="submitOrderEdit(${order.id})">💾 Lưu thay đổi</button>
-      <button class="btn secondary" style="margin:0; flex:1;" onclick="cancelEditOrder(${order.id})">Hủy</button>
-    </div>
-    <div id="editOrderMsg"></div>
-  `;
-}
-
-// Mo giao dien sua ngay trong modal chi tiet don hang dang mo san (thay the noi dung xem
-// thong thuong bang form sua). Tu tai lai chinh don hang + danh sach kho de dam bao du lieu moi nhat.
-async function startEditOrder(orderId) {
-  try {
-    const [orderData, whData] = await Promise.all([
-      apiFetch(`/api/orders/${orderId}`),
-      apiFetch('/api/warehouses'),
-    ]);
-    const order = orderData.order;
-    const user = getUser();
-    const canEditAny = hasUserRole(user, 'leader') || hasUserPermission(user, 'delete_any_order');
-    const anyStarted = (order.warehouses || []).some((w) => w.confirmed_by_username);
-    const canEditWarehouses = canEditAny || !anyStarted;
-
-    document.getElementById('modalTitle').textContent = '✏️ Sửa đơn hàng';
-    document.getElementById('modalContent').innerHTML = renderOrderEditForm(order, whData.warehouses, canEditWarehouses);
-  } catch (err) {
-    alert('Không tải được thông tin để sửa: ' + err.message);
-  }
-}
-
-// Huy sua, quay lai xem chi tiet don hang binh thuong (ham openOrderDetail duoc dinh nghia
-// rieng o tung trang goi ham nay, vi cach hien thi chi tiet co khac nhau doi chut giua cac trang).
-function cancelEditOrder(orderId) {
-  if (typeof window.openOrderDetail === 'function') window.openOrderDetail(orderId);
-  else if (typeof window.openOrder === 'function') window.openOrder(orderId);
-}
-
-async function submitOrderEdit(orderId) {
-  const msg = document.getElementById('editOrderMsg');
-  msg.className = '';
-  msg.textContent = '';
-
-  const customerName = document.getElementById('editCustomerName').value.trim();
-  if (!customerName) {
-    msg.className = 'error-msg';
-    msg.textContent = 'Vui lòng nhập tên khách hàng.';
-    return;
-  }
-
-  const body = {
-    order_type: document.getElementById('editOrderType').value,
-    order_code: document.getElementById('editOrderCode').value.trim(),
-    customer_name: customerName,
-    note: document.getElementById('editNote').value.trim(),
-  };
-
-  // Chi gui warehouse_ids khi checkbox KHONG bi khoa (con duoc phep doi kho)
-  const whCheckboxes = document.querySelectorAll('.edit-warehouse-checkbox');
-  if (whCheckboxes.length > 0 && !whCheckboxes[0].disabled) {
-    const checkedWh = Array.from(whCheckboxes).filter((el) => el.checked).map((el) => el.value);
-    if (checkedWh.length === 0) {
-      msg.className = 'error-msg';
-      msg.textContent = 'Vui lòng chọn ít nhất 1 kho nhận đơn hàng.';
-      return;
-    }
-    body.warehouse_ids = checkedWh.join(',');
-  }
-
-  try {
-    await apiFetch(`/api/orders/${orderId}`, { method: 'PATCH', body: JSON.stringify(body) });
-    showToast('✅ Đã lưu thay đổi đơn hàng.');
-    closeModal();
-    if (typeof window.refreshList === 'function') window.refreshList();
-  } catch (err) {
-    msg.className = 'error-msg';
-    msg.textContent = err.message;
-  }
 }
 
 function todayStr() {
@@ -379,20 +233,12 @@ if (!document.getElementById('toastKeyframes')) {
 
 // ==== Ket noi real-time (Server-Sent Events) de nhan thong bao va tu dong lam moi danh sach ====
 let __sseConnection = null;
-let __sseReconnectTimer = null;
 function connectRealtime() {
   const token = getToken();
   if (!token || __sseConnection) return;
 
   const user = getUser();
   __sseConnection = new EventSource(`/api/events?token=${encodeURIComponent(token)}`);
-
-  // Vua ket noi (lan dau HOAC sau khi mat mang/reconnect) -> tai lai danh sach ngay, vi cac
-  // su kien phat sinh trong luc mat ket noi se KHONG duoc gui lai (khong co co che luu lich su
-  // su kien) - neu khong lam buoc nay, du lieu tren man hinh co the bi sot ma khong ai biet.
-  __sseConnection.onopen = () => {
-    if (typeof window.refreshList === 'function') window.refreshList();
-  };
 
   __sseConnection.addEventListener('new_order', (e) => {
     const data = JSON.parse(e.data);
@@ -409,20 +255,12 @@ function connectRealtime() {
   __sseConnection.addEventListener('order_updated', (e) => {
     const data = JSON.parse(e.data);
     if (hasUserRole(user, 'sales') && data.sales_user_id === user.id && data.updated_by !== user.username) {
-      showToast(`📦 Đơn "${data.customer_name}" vừa được cập nhật: ${statusLabel(data.warehouse_status, data.order_type)}`);
+      showToast(`📦 Đơn "${data.customer_name}" vừa được cập nhật: ${statusLabel(data.warehouse_status)}`);
     }
     if (typeof window.refreshList === 'function') window.refreshList();
   });
 
   __sseConnection.addEventListener('order_deleted', () => {
-    if (typeof window.refreshList === 'function') window.refreshList();
-  });
-
-  __sseConnection.addEventListener('order_edited', (e) => {
-    const data = JSON.parse(e.data);
-    if (hasUserRole(user, 'sales') && data.sales_user_id === user.id && data.updated_by !== user.username) {
-      showToast(`✏️ Đơn "${data.customer_name}" vừa được sửa thông tin bởi ${data.updated_by}.`);
-    }
     if (typeof window.refreshList === 'function') window.refreshList();
   });
 
@@ -439,50 +277,10 @@ function connectRealtime() {
     if (typeof window.refreshList === 'function') window.refreshList();
   });
 
-  __sseConnection.addEventListener('return_deleted', () => {
-    if (typeof window.refreshList === 'function') window.refreshList();
-  });
-
   __sseConnection.onerror = () => {
-    // Trinh duyet tu dong thu ket noi lai khi con o trang thai CONNECTING (readyState 0).
-    // Nhung neu server tra loi loi xac thuc (vi du token het han) trinh duyet se CHUYEN VE
-    // CLOSED (readyState 2) va KHONG tu thu lai nua - neu bo qua truong hop nay, app se mat
-    // toan bo cap nhat realtime im lang, khong ai biet. Chu dong dong + hen gio ket noi lai.
-    if (__sseConnection && __sseConnection.readyState === 2) {
-      __sseConnection.close();
-      __sseConnection = null;
-      if (!__sseReconnectTimer) {
-        __sseReconnectTimer = setTimeout(() => {
-          __sseReconnectTimer = null;
-          connectRealtime();
-        }, 8000);
-      }
-    }
+    // EventSource tu dong ket noi lai, khong can xu ly gi them
   };
 }
-
-// Khi app tu nen quay lai hien thi (mo lai tab da bi trinh duyet "ngu", mo lai app tren dien
-// thoai sau khi khoa man hinh...) - luon tai lai danh sach ngay, va kiem tra/khoi phuc ket noi
-// realtime neu no da bi dong trong luc an. Day la luoi an toan quan trong nhat de khong sot
-// du lieu, vi day chinh la tinh huong pho bien nhat lam mat ket noi tren dien thoai.
-document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState !== 'visible') return;
-  if (typeof window.refreshList === 'function') window.refreshList();
-  if (__sseConnection && __sseConnection.readyState === 2) {
-    __sseConnection.close();
-    __sseConnection = null;
-  }
-  connectRealtime();
-});
-
-// Luoi an toan cuoi cung: du SSE va cac co che tren hoat dong dung, van tu tai lai danh sach
-// dinh ky (chi khi dang xem app, khong lam gian doan luc dang go/nhap lieu) de dam bao khong
-// bao gio bi sot du lieu qua lau du co xay ra loi gi khong luong truoc duoc.
-setInterval(() => {
-  if (document.visibilityState === 'visible' && typeof window.refreshList === 'function') {
-    window.refreshList();
-  }
-}, 60 * 1000);
 
 // ==== Web Push: dang ky nhan thong bao day (hoat dong ke ca khi da dong trinh duyet) ====
 function urlBase64ToUint8Array(base64String) {

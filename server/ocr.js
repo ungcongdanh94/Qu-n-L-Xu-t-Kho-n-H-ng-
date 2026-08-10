@@ -28,9 +28,9 @@ const KEYWORD_PHRASES = [
 // chu "Sở" (vi du "Cơ Sở" trong ten cong ty) - can xu ly rieng, chi coi la ranh gioi khi
 // co dau ":" di kem ngay sau (dac diem rieng cua nhan "Số:"), xem ham isSoBoundary/otherFieldSoMatch.
 const BOUNDARY_PHRASES = [
-  ['ngay'], ['dia', 'chi'], ['dien', 'thoai'], ['sdt'], ['dt'], ['mau', 'so'],
+  ['ngay'], ['dia', 'chi'], ['dien', 'thoai'], ['sdt'], ['dt'],
 ];
-const OTHER_FIELD_KEYWORDS_TEXT = ['ngay', 'dia chi', 'dien thoai', 'sdt', 'mau so'];
+const OTHER_FIELD_KEYWORDS_TEXT = ['ngay', 'dia chi', 'dien thoai', 'sdt'];
 
 // Cac cum chu KHONG PHAI la ten khach hang du co the bi bat nham (vi du dong chu ky cuoi phieu:
 // "Khach hang | Tai xe | Ban hang | Kiem hang"). Neu ket qua doan duoc trung/chua cum nay,
@@ -49,18 +49,6 @@ const NON_NAME_LINES = [
 // Dau hieu cho thay 1 dong CO THE la thong tin khach hang (ten cong ty/cua hang, so dien thoai...)
 const COMPANY_HINTS = ['cong ty', 'tnhh', 'cua hang', 'doanh nghiep', 'dntn', 'co so'];
 const PHONE_PATTERN = /0\d[\d.\-\s]{7,12}\d/;
-
-// Ten cong ty CUA CHINH CONG THANH - thuong in san o tieu de/dau phieu (dac biet Phieu Nhap Kho,
-// khi CONG THANH la ben nhap hang chu khong phai khach hang). Neu 1 dong khop voi day thi
-// KHONG DUOC chon lam ten khach du diem so cao (co chu "cong ty", "tnhh"...).
-// Them cac bien the neu OCR doc sai/thieu dau khac di.
-const OWN_COMPANY_HINTS = ['cong thanh', 'cty tnhh tm sx cong thanh', 'cong ty tnhh tm sx cong thanh'];
-
-function isOwnCompanyLine(text) {
-  const normalized = stripDiacritics(text || '').replace(/\s+/g, ' ').trim();
-  if (!normalized) return false;
-  return OWN_COMPANY_HINTS.some((hint) => normalized.includes(hint));
-}
 
 // Mau nhan dien MA SO DON HANG dang "BH........." (vi du BH8374, BH837346...).
 // Ghep toan bo van ban lai bang khoang trang truoc khi tim, de xu ly truong hop
@@ -155,7 +143,7 @@ function guessCustomerNameFromText(rawText) {
       if (soMatch && soMatch.index < cutIndex) cutIndex = soMatch.index;
 
       const cleaned = afterKeyword.slice(0, cutIndex).trim();
-      if (cleaned.length >= 2 && !isBlacklisted(cleaned) && !isOwnCompanyLine(cleaned)) {
+      if (cleaned.length >= 2 && !isBlacklisted(cleaned)) {
         candidates.push({ text: cleaned, kwIndex, lineIndex });
       }
       // Chi thu tu khoa DAU TIEN khop tren dong nay (cu the/dai nhat), khong thu tiep
@@ -183,14 +171,7 @@ function guessCustomerNameFromText(rawText) {
     const wordCount = line.split(/\s+/).length;
     const isMostlyDigits = /^[\d\s.,:\-\/]+$/.test(line);
     const isNonNameLine = NON_NAME_LINES.some((n) => normalized.includes(n));
-    if (
-      wordCount < 2 ||
-      isMostlyDigits ||
-      line.length > 80 ||
-      isBlacklisted(line) ||
-      isNonNameLine ||
-      isOwnCompanyLine(line)
-    ) {
+    if (wordCount < 2 || isMostlyDigits || line.length > 80 || isBlacklisted(line) || isNonNameLine) {
       continue;
     }
     let score = 1;
@@ -271,7 +252,7 @@ function guessCustomerNameFromWords(words) {
 
   for (const label of matches) {
     const candidate = collectWordsToRightOfRow(validWords, label);
-    if (candidate && candidate.length >= 2 && !isBlacklisted(candidate) && !isOwnCompanyLine(candidate)) {
+    if (candidate && candidate.length >= 2 && !isBlacklisted(candidate)) {
       return candidate;
     }
   }

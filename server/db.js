@@ -89,9 +89,6 @@ CREATE TABLE IF NOT EXISTS returns (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   customer_name TEXT NOT NULL,
   warehouse_id INTEGER NOT NULL,
-  order_code TEXT,
-  voucher_photo_path TEXT,
-  goods_photo_path TEXT,
   note TEXT,
   photo_path TEXT,
   initiated_by_role TEXT NOT NULL CHECK(initiated_by_role IN ('sales','warehouse')),
@@ -160,57 +157,6 @@ if (!columnExists('users', 'permissions')) {
 }
 if (!columnExists('order_photos', 'warehouse_id')) {
   db.exec('ALTER TABLE order_photos ADD COLUMN warehouse_id INTEGER REFERENCES warehouses(id)');
-}
-if (!columnExists('returns', 'order_code')) {
-  db.exec('ALTER TABLE returns ADD COLUMN order_code TEXT');
-}
-// Thiet ke lai: tach 1 cot photo_path (mo ho, ai chup cung duoc) thanh 2 cot ro rang - vi Sales
-// (vai tro CHINH, khong phai lam them) luon dinh kem anh PHIEU tra hang, con Thu kho luon dinh kem
-// anh HANG THUC TRA, khong phu thuoc ai lap phieu truoc.
-if (!columnExists('returns', 'voucher_photo_path')) {
-  db.exec('ALTER TABLE returns ADD COLUMN voucher_photo_path TEXT');
-}
-if (!columnExists('returns', 'goods_photo_path')) {
-  db.exec('ALTER TABLE returns ADD COLUMN goods_photo_path TEXT');
-  // Du lieu cu: truoc day chi co 1 anh duy nhat. Tam gan vao goods_photo_path truoc (phan lon
-  // truong hop dung), roi doi soat ky hon ngay ben duoi dua theo vai tro CHINH cua nguoi chup.
-  db.exec("UPDATE returns SET goods_photo_path = photo_path WHERE photo_path IS NOT NULL");
-}
-
-// Doi soat lai du lieu tra hang CU (tao truoc khi co 2 loai anh rieng cho Sales/Thu kho): xac dinh
-// DUNG nguoi da chup tam anh do - la nguoi XAC NHAN sau (confirmed_by_username) neu co, neu chua
-// ai xac nhan thi la chinh nguoi LAP PHIEU (vi anh duoc dinh kem ngay luc tao) - roi tra cuu VAI TRO
-// CHINH (roles dau tien luc tao tai khoan, luu san trong cot "role") cua nguoi do de xep dung vao o
-// anh tuong ung, tranh nham lan voi tai khoan kiem ca 2 vai tro Sales + Thu kho.
-// Dau hieu nhan biet 1 dong la du lieu CU can doi soat: da "hoan tat" nhung chi co goods_photo_path
-// (mo hinh cu chi co 1 anh); du lieu MOI tao theo he thong 2-anh khi "hoan tat" luon co CA 2 anh,
-// nen khong bao gio bi doi soat nham. Chay lai moi lan khoi dong de tu sua nhung ban da lo migrate
-// don gian (chi gan vao goods_photo_path) truoc khi co doi soat nay.
-const legacySinglePhotoRows = db
-  .prepare(
-    `SELECT id, initiated_by_username, confirmed_by_username, goods_photo_path
-     FROM returns
-     WHERE status = 'hoan_tat' AND goods_photo_path IS NOT NULL AND voucher_photo_path IS NULL`
-  )
-  .all();
-
-if (legacySinglePhotoRows.length > 0) {
-  const getPrimaryRole = db.prepare('SELECT role FROM users WHERE username = ?');
-  const reclassifyAsVoucher = db.prepare(
-    'UPDATE returns SET voucher_photo_path = ?, goods_photo_path = NULL WHERE id = ?'
-  );
-  for (const row of legacySinglePhotoRows) {
-    const responsibleUsername = row.confirmed_by_username || row.initiated_by_username;
-    const userRow = responsibleUsername ? getPrimaryRole.get(responsibleUsername) : null;
-    const primaryRole = userRow ? userRow.role : null;
-    // Chi xep lai thanh anh PHIEU (voucher) neu vai tro CHINH cua nguoi chup la 'sales'. Moi truong
-    // hop khac (thu kho, quan ly, hoac khong con tim thay tai khoan) giu nguyen la anh HANG THUC
-    // TRA (goods) - phan loai an toan mac dinh, dung voi thuc te van hanh cu (ai cam hang trong tay
-    // moi la nguoi chup).
-    if (primaryRole === 'sales') {
-      reclassifyAsVoucher.run(row.goods_photo_path, row.id);
-    }
-  }
 }
 // Tao index cho order_photos.warehouse_id O DAY (sau khi chac chan cot da ton tai), tranh loi
 // "no such column" tren cac database cu (da co bang order_photos truoc khi co tinh nang nay).

@@ -16,10 +16,7 @@
 
   <div class="container">
     <div class="card">
-      <h2 style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
-        <span>📑 Đơn hàng</span>
-        <button class="btn secondary" style="margin:0; width:auto; padding:6px 12px; font-size:13px;" onclick="loadOrders()">🔄 Làm mới</button>
-      </h2>
+      <h2>📑 Đơn hàng</h2>
       <p class="hint">Xem đơn của tất cả sales, có ghi rõ ai đã đăng đơn nào.</p>
 
       <label style="display:flex; align-items:center; gap:8px; margin-top:10px;">
@@ -100,7 +97,6 @@
       el.innerHTML = 'Đang tải...';
 
       const params = new URLSearchParams();
-      params.set('view', 'sales');
       if (document.getElementById('onlyMineFilter').checked) params.set('mine', '1');
       if (status) params.set('status', status);
       if (orderType) params.set('order_type', orderType);
@@ -122,11 +118,13 @@
               <div class="name">${orderDisplayName(o)}</div>
               <div class="meta">
                 <span class="badge ${o.order_type}">${orderTypeLabel(o.order_type)}</span>
-                <span class="badge ${o.status}">${statusLabel(o.status, o.order_type)}</span>
+                <span class="badge ${o.status}">${statusLabel(o.status)}</span>
               </div>
-              ${renderWarehouseChips(o.warehouses, o.order_type)}
-              <div class="meta" style="margin-top:6px;">
-                Sales: <b>${o.sales_username}</b> &nbsp;·&nbsp; ${formatDateTime(o.created_at)}
+              <div class="meta">
+                ${(o.warehouses || [])
+                  .map((w) => `${w.warehouse_name}: <span class="badge ${w.status}" style="font-size:10px; padding:2px 6px;">${statusLabel(w.status)}</span>`)
+                  .join(' &nbsp;·&nbsp; ')}
+                &nbsp;·&nbsp; Sales: <b>${o.sales_username}</b> &nbsp;·&nbsp; ${formatDateTime(o.created_at)}
               </div>
               ${o.note ? `<div class="note-inline">📝 ${o.note}</div>` : ''}
             </div>
@@ -145,7 +143,12 @@
       currentDetailOrder = data.order;
       document.getElementById('modalTitle').textContent = orderDisplayName(data.order);
 
-      const warehousesBreakdown = renderWarehouseChips(data.order.warehouses, data.order.order_type);
+      const warehousesBreakdown = (data.order.warehouses || [])
+        .map(
+          (w) =>
+            `${w.warehouse_name}: <span class="badge ${w.status}">${statusLabel(w.status)}</span>${w.confirmed_by_username ? ' (bởi ' + w.confirmed_by_username + ')' : ''}`
+        )
+        .join('<br/>');
 
       const photosHtml = data.photos
         .map(
@@ -160,22 +163,18 @@
       const canDelete =
         (hasUserRole(user, 'sales') && data.order.sales_username === user.username && data.order.status === 'cho_soan') ||
         hasUserPermission(user, 'delete_any_order');
-      const canEdit = canEditOrder(user, data.order);
 
       document.getElementById('modalContent').innerHTML = `
         <p class="hint">
           Loại đơn: <span class="badge ${data.order.order_type}">${orderTypeLabel(data.order.order_type)}</span><br/>
-          Trạng thái chung: <span class="badge ${data.order.status}">${statusLabel(data.order.status, data.order.order_type)}</span><br/>
+          Trạng thái chung: <span class="badge ${data.order.status}">${statusLabel(data.order.status)}</span><br/>
           Sales đăng đơn: <b>${data.order.sales_username}</b><br/>
           Tạo lúc: ${formatDateTime(data.order.created_at)}
         </p>
         ${data.order.note ? `<div class="note-box">📝 <b>Ghi chú:</b> ${data.order.note}</div>` : ''}
-        ${warehousesBreakdown}
+        <p class="hint">${warehousesBreakdown}</p>
         <div class="photo-gallery">${photosHtml}</div>
-        <div style="display:flex; gap:10px; margin-top:10px;">
-          ${canEdit ? '<button class="btn secondary" style="margin:0; flex:1;" onclick="startEditOrder(' + data.order.id + ')">✏️ Sửa đơn</button>' : ''}
-          ${canDelete ? '<button class="btn danger" style="margin:0; flex:1;" onclick="deleteMyOrder()">🗑️ Xoá đơn (lỡ đăng sai)</button>' : ''}
-        </div>
+        ${canDelete ? '<button class="btn danger" onclick="deleteMyOrder()">🗑️ Xoá đơn này (lỡ đăng sai)</button>' : ''}
         <div id="deleteOrderMsg"></div>
       `;
       document.getElementById('modalOverlay').style.display = 'flex';
