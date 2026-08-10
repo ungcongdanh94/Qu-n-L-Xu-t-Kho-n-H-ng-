@@ -113,7 +113,7 @@
           .map(
             (o) => `
           <div class="order-item">
-            <img src="/uploads/${o.order_photo_path}" onclick="event.stopPropagation(); openImageViewer('/uploads/${o.order_photo_path}')" />
+            <img src="/uploads/${o.order_photo_path}" onclick="event.stopPropagation(); openImageViewer('/uploads/${o.order_photo_path}')"  loading="lazy" />
             <div class="info" onclick="openOrderDetail(${o.id})">
               <div class="name">${orderDisplayName(o)}</div>
               <div class="meta">
@@ -154,7 +154,7 @@
         .map(
           (p) => `
         <div>
-          <img src="/uploads/${p.photo_path}" onclick="openImageViewer('/uploads/${p.photo_path}')" />
+          <img src="/uploads/${p.photo_path}" onclick="openImageViewer('/uploads/${p.photo_path}')"  loading="lazy" />
           <div class="label">${{ order: 'Đơn gốc', packed: 'Đã giao hàng', return: 'Hàng trả' }[p.type]}${p.warehouse_name ? ' - ' + p.warehouse_name : ''}</div>
         </div>`
         )

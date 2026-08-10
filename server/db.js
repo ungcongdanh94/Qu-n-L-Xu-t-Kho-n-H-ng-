@@ -8,6 +8,7 @@ if (!fs.existsSync(dataDir)) fs.mkdirSync(dataDir, { recursive: true });
 const dbPath = path.join(dataDir, 'app.db');
 const db = new Database(dbPath);
 db.pragma('journal_mode = WAL');
+db.pragma('synchronous = NORMAL'); // an toan va nhanh hon o che do WAL, phu hop voi khoi luong app nay
 db.pragma('foreign_keys = ON');
 
 db.exec(`
@@ -114,11 +115,15 @@ CREATE TABLE IF NOT EXISTS push_subscriptions (
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_name);
 CREATE INDEX IF NOT EXISTS idx_orders_warehouse ON orders(warehouse_id);
+CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
+CREATE INDEX IF NOT EXISTS idx_orders_status_created ON orders(status, created_at);
 CREATE INDEX IF NOT EXISTS idx_order_photos_order ON order_photos(order_id);
 CREATE INDEX IF NOT EXISTS idx_order_warehouses_order ON order_warehouses(order_id);
 CREATE INDEX IF NOT EXISTS idx_order_warehouses_warehouse ON order_warehouses(warehouse_id);
+CREATE INDEX IF NOT EXISTS idx_order_warehouses_warehouse_status ON order_warehouses(warehouse_id, status);
 CREATE INDEX IF NOT EXISTS idx_returns_status ON returns(status);
 CREATE INDEX IF NOT EXISTS idx_returns_warehouse ON returns(warehouse_id);
+CREATE INDEX IF NOT EXISTS idx_returns_created_at ON returns(created_at);
 CREATE INDEX IF NOT EXISTS idx_push_subscriptions_user ON push_subscriptions(user_id);
 `);
 

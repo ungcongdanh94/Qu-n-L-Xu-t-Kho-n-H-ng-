@@ -172,7 +172,7 @@
           .map(
             (r) => `
           <div class="order-item" onclick="openReturn(${r.id})">
-            ${r.photo_path ? `<img src="/uploads/${r.photo_path}" onclick="event.stopPropagation(); openImageViewer('/uploads/${r.photo_path}')" />` : '<div style="width:64px;height:64px;background:#f1f1f1;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:11px;">Chưa có hình</div>'}
+            ${r.photo_path ? `<img src="/uploads/${r.photo_path}" onclick="event.stopPropagation(); openImageViewer('/uploads/${r.photo_path}')"  loading="lazy" />` : '<div style="width:64px;height:64px;background:#f1f1f1;border-radius:8px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:#bbb;font-size:11px;">Chưa có hình</div>'}
             <div class="info">
               <div class="name">${r.customer_name}</div>
               <div class="meta">
@@ -216,7 +216,7 @@
           ${currentReturn.confirmed_by_username ? 'Xác nhận bởi: ' + currentReturn.confirmed_by_username : ''}
         </p>
         ${currentReturn.note ? `<div class="note-box">📝 <b>Ghi chú:</b> ${currentReturn.note}</div>` : ''}
-        ${currentReturn.photo_path ? `<img src="/uploads/${currentReturn.photo_path}" style="max-width:100%;border-radius:8px;cursor:pointer;" onclick="openImageViewer('/uploads/${currentReturn.photo_path}')" />` : '<p class="hint">Chưa có hình xác nhận.</p>'}
+        ${currentReturn.photo_path ? `<img src="/uploads/${currentReturn.photo_path}" style="max-width:100%;border-radius:8px;cursor:pointer;" onclick="openImageViewer('/uploads/${currentReturn.photo_path}')"  loading="lazy" />` : '<p class="hint">Chưa có hình xác nhận.</p>'}
         ${actionHtml}
         <div id="actionMsg"></div>
       `;
