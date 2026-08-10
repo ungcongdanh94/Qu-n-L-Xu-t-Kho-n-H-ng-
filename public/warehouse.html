@@ -159,14 +159,17 @@
       const warehousesBreakdown = renderWarehouseChips(data.order.warehouses, data.order.order_type);
 
       // Thu kho: luon xac nhan cho dung kho cua minh, khong can chon.
-      // Leader: co the xu ly thay cho bat ky kho nao con "cho soan" trong don nay, nen can chon ro.
+      // Leader: co the them anh cho BAT KY kho nao trong don nay - ke ca kho DA xong roi (vi du
+      // muon bo sung them anh khac goc chup ro hon) - nen luon hien du het cac kho, khong chi loc
+      // rieng kho "cho soan". Neu chi loc kho dang cho, se khong co cach nao chon duoc kho da xong
+      // khi muon them anh, gay loi "Vui long chon kho can xac nhan" du don chi co 1 kho da xong.
       let warehouseSelectHtml = '';
-      const pendingWarehouses = (data.order.warehouses || []).filter((w) => w.status === 'cho_soan');
-      if (hasUserRole(user, 'leader') && pendingWarehouses.length > 0) {
+      const orderWarehouses = data.order.warehouses || [];
+      if (hasUserRole(user, 'leader') && orderWarehouses.length > 0) {
         warehouseSelectHtml = `
-          <label>Xác nhận cho kho</label>
+          <label>Áp dụng cho kho</label>
           <select id="confirmWarehouseId">
-            ${pendingWarehouses.map((w) => `<option value="${w.warehouse_id}">${w.warehouse_name}</option>`).join('')}
+            ${orderWarehouses.map((w) => `<option value="${w.warehouse_id}">${w.warehouse_name} (${statusLabel(w.status, data.order.order_type)})</option>`).join('')}
           </select>
         `;
       }
