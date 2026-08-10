@@ -17,6 +17,7 @@
   <div class="container">
     <div class="card">
       <h2>📦 Đơn hàng chờ xử lý <span id="warehouseNameLabel" class="hint" style="font-weight:400;"></span></h2>
+      <p id="warehouseScopeHint" class="hint"></p>
 
       <div class="day-nav">
         <button onclick="shiftDay(-1)">◀</button>
@@ -75,10 +76,16 @@
     let currentOrder = null;
 
     async function initWarehouseHeader() {
+      const hintEl = document.getElementById('warehouseScopeHint');
       if (hasUserRole(user, 'warehouse') && !hasUserRole(user, 'leader')) {
         document.getElementById('warehouseNameLabel').textContent = user.warehouse_name
           ? `— ${user.warehouse_name}`
           : '';
+        // Ghi ro pham vi xem duoc, tranh nham lan la loi khi don gan cho kho khac khong hien ra
+        // (bo loc trang thai KHONG lien quan gi den dieu nay - trang nay luon chi hien dung 1 kho).
+        hintEl.textContent = user.warehouse_name
+          ? `Trang này chỉ hiện đơn hàng được gán cho ${user.warehouse_name}. Đơn gán cho kho khác sẽ không hiện ở đây, dù chọn lọc trạng thái nào.`
+          : 'Bạn chưa được gán vào kho cụ thể nào - liên hệ quản lý để được gán kho.';
       } else if (hasUserRole(user, 'leader')) {
         const data = await apiFetch('/api/warehouses');
         const select = document.getElementById('warehouseFilter');
@@ -86,6 +93,7 @@
         select.innerHTML =
           '<option value="">Tất cả các kho</option>' +
           data.warehouses.map((w) => `<option value="${w.id}">${w.name}</option>`).join('');
+        hintEl.textContent = 'Đang xem tất cả các kho. Chọn 1 kho cụ thể ở bộ lọc bên dưới nếu muốn xem riêng.';
       }
     }
 
@@ -110,20 +118,18 @@
         el.innerHTML = data.orders
           .map((o) => {
             const displayStatus = (hasUserRole(user, 'warehouse') && !hasUserRole(user, 'leader')) ? o.my_status : o.status;
-            const warehousesBreakdown = (o.warehouses || [])
-              .map((w) => `${w.warehouse_name}: <span class="badge ${w.status}" style="font-size:10px; padding:2px 6px;">${statusLabel(w.status)}</span>`)
-              .join(' &nbsp;·&nbsp; ');
             return `
           <div class="order-item">
-            <img src="/uploads/${o.order_photo_path}" onclick="event.stopPropagation(); openImageViewer('/uploads/${o.order_photo_path}')"  loading="lazy" />
+            <img src="/uploads/${o.order_photo_path}" onclick="event.stopPropagation(); openImageViewer('/uploads/${o.order_photo_path}')" loading="lazy" />
             <div class="info" onclick="openOrder(${o.id})">
               <div class="name">${orderDisplayName(o)}</div>
               <div class="meta">
                 <span class="badge ${o.order_type}">${orderTypeLabel(o.order_type)}</span>
-                <span class="badge ${displayStatus}">${statusLabel(displayStatus)}</span>
+                <span class="badge ${displayStatus}">${statusLabel(displayStatus, o.order_type)}</span>
               </div>
-              <div class="meta">
-                ${warehousesBreakdown} &nbsp;·&nbsp; Sales: ${o.sales_username} &nbsp;·&nbsp; ${formatDateTime(o.created_at)}
+              ${renderWarehouseChips(o.warehouses, o.order_type)}
+              <div class="meta" style="margin-top:6px;">
+                Sales: ${o.sales_username} &nbsp;·&nbsp; ${formatDateTime(o.created_at)}
               </div>
               ${o.note ? `<div class="note-inline">📝 ${o.note}</div>` : ''}
             </div>
@@ -144,26 +150,23 @@
         .map(
           (p) => `
         <div>
-          <img src="/uploads/${p.photo_path}" onclick="openImageViewer('/uploads/${p.photo_path}')"  loading="lazy" />
+          <img src="/uploads/${p.photo_path}" onclick="openImageViewer('/uploads/${p.photo_path}')" loading="lazy" />
           <div class="label">${{ order: 'Đơn gốc', packed: 'Đã giao hàng', return: 'Hàng trả' }[p.type]}${p.warehouse_name ? ' - ' + p.warehouse_name : ''}</div>
         </div>`
         )
         .join('');
 
-      const warehousesBreakdown = (data.order.warehouses || [])
-        .map((w) => `${w.warehouse_name}: <span class="badge ${w.status}">${statusLabel(w.status)}</span>`)
-        .join('<br/>');
+      const warehousesBreakdown = renderWarehouseChips(data.order.warehouses, data.order.order_type);
 
       // Thu kho: luon xac nhan cho dung kho cua minh, khong can chon.
-      // Leader: khong co kho co dinh, nen luon can chon ro dang them anh cho kho nao -
-      // ke ca kho da "Da giao hang" roi (vi du muon bo sung them anh xac minh, hoac bao hang tra tre).
+      // Leader: co the xu ly thay cho bat ky kho nao con "cho soan" trong don nay, nen can chon ro.
       let warehouseSelectHtml = '';
-      const allOrderWarehouses = data.order.warehouses || [];
-      if (hasUserRole(user, 'leader') && allOrderWarehouses.length > 0) {
+      const pendingWarehouses = (data.order.warehouses || []).filter((w) => w.status === 'cho_soan');
+      if (hasUserRole(user, 'leader') && pendingWarehouses.length > 0) {
         warehouseSelectHtml = `
-          <label>Chọn kho để thêm hình xác nhận</label>
+          <label>Xác nhận cho kho</label>
           <select id="confirmWarehouseId">
-            ${allOrderWarehouses.map((w) => `<option value="${w.warehouse_id}">${w.warehouse_name} (${statusLabel(w.status)})</option>`).join('')}
+            ${pendingWarehouses.map((w) => `<option value="${w.warehouse_id}">${w.warehouse_name}</option>`).join('')}
           </select>
         `;
       }
@@ -171,10 +174,10 @@
       document.getElementById('modalContent').innerHTML = `
         <p class="hint">
           Loại đơn: <span class="badge ${data.order.order_type}">${orderTypeLabel(data.order.order_type)}</span>
-          &nbsp; Trạng thái chung: <span class="badge ${data.order.status}">${statusLabel(data.order.status)}</span>
+          &nbsp; Trạng thái chung: <span class="badge ${data.order.status}">${statusLabel(data.order.status, data.order.order_type)}</span>
         </p>
         ${data.order.note ? `<div class="note-box">📝 <b>Ghi chú:</b> ${data.order.note}</div>` : ''}
-        <p class="hint">${warehousesBreakdown}</p>
+        ${warehousesBreakdown}
         <div class="photo-gallery">${photosHtml}</div>
 
         ${warehouseSelectHtml}
@@ -196,7 +199,12 @@
 
         <div id="uploadMsg"></div>
 
-        ${hasUserRole(user, 'leader') || hasUserPermission(user, 'delete_any_order') ? '<button class="btn danger" style="margin-top:16px;" onclick="deleteCurrentOrderWarehouse()">🗑️ Xoá đơn hàng này</button><div id="deleteMsgWarehouse"></div>' : ''}
+        ${hasUserRole(user, 'leader') || hasUserPermission(user, 'delete_any_order') ? `
+        <div style="display:flex; gap:10px; margin-top:16px;">
+          <button class="btn secondary" style="margin:0; flex:1;" onclick="startEditOrder(${data.order.id})">✏️ Sửa đơn</button>
+          <button class="btn danger" style="margin:0; flex:1;" onclick="deleteCurrentOrderWarehouse()">🗑️ Xoá đơn</button>
+        </div>
+        <div id="deleteMsgWarehouse"></div>` : ''}
       `;
       document.getElementById('modalOverlay').style.display = 'flex';
     }

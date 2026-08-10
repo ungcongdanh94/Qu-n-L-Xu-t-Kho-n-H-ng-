@@ -41,11 +41,10 @@ function requireRole(...roles) {
   };
 }
 
-const getUserPermissionsStmt = db.prepare('SELECT permissions FROM users WHERE id = ?');
-
 // Kiem tra 1 nguoi dung (theo id) co duoc cap 1 quyen rieng cu the hay khong.
 // Luon doc truc tiep tu database (khong dua vao JWT) de thay doi quyen co hieu luc ngay,
 // khong can nguoi dung phai dang xuat/dang nhap lai.
+const getUserPermissionsStmt = db.prepare('SELECT permissions FROM users WHERE id = ?');
 function hasPermission(userId, permission) {
   const row = getUserPermissionsStmt.get(userId);
   if (!row || !row.permissions) return false;

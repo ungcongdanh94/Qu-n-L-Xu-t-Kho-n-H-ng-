@@ -176,6 +176,24 @@ textarea { resize: vertical; min-height: 60px; }
 .order-item .name { font-weight: 600; font-size: 15px; }
 .order-item .meta { font-size: 12px; color: var(--muted); margin-top: 3px; }
 
+/* Kho nhan don hang - lam noi bat hon so voi chu xam thuong, de sales nhin vao la thay ngay
+   don nay thuoc kho nao, khong phai doc chu nho lan trong dong meta. */
+.warehouse-chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.warehouse-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: #eaf2fa;
+  border: 1px solid #bcd7ec;
+  color: var(--primary-dark);
+  border-radius: 7px;
+  padding: 4px 9px 4px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.warehouse-chip .badge { margin-left: 2px; font-size: 10px; padding: 2px 7px; font-weight: 600; }
+
 .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 .filters select, .filters input { width: auto; flex: 1; min-width: 120px; }
 
@@ -183,7 +201,9 @@ textarea { resize: vertical; min-height: 60px; }
   display: flex;
   align-items: center;
   gap: 8px;
+  row-gap: 8px;
   margin-bottom: 12px;
+  flex-wrap: wrap;
 }
 .day-nav button {
   background: #fff;
@@ -195,8 +215,8 @@ textarea { resize: vertical; min-height: 60px; }
   cursor: pointer;
   flex-shrink: 0;
 }
-.day-nav input[type="date"] { flex: 1; margin: 0; }
-.day-nav .today-btn { width: auto; padding: 0 12px; font-size: 13px; }
+.day-nav input[type="date"] { flex: 1 1 140px; min-width: 0; margin: 0; }
+.day-nav .today-btn { width: auto; flex-shrink: 0; padding: 0 12px; font-size: 13px; }
 
 .error-msg { color: var(--danger); font-size: 13px; margin-top: 8px; }
 .success-msg { color: var(--success); font-size: 13px; margin-top: 8px; }

@@ -187,14 +187,33 @@ router.post('/', requireAuth, requireRole('sales', 'leader'), async (req, res) =
   res.json({ order });
 });
 
-// ============ Sua ten khach hang / ghi chu (sau khi xac nhan OCR) ============
+// ============ Sua thong tin don hang sau khi da luu (lo sai ten khach, ma don, kho, loai don...) ============
 router.patch('/:id', requireAuth, (req, res) => {
   const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   if (!order) return res.status(404).json({ error: 'Khong tim thay don hang.' });
 
-  const { customer_name, note, order_code } = req.body || {};
+  const roles = getUserRoles(req.user);
+  const isLeader = roles.includes('leader');
+  // "Toan quyen sua": quan ly, hoac nguoi duoc cap rieng quyen delete_any_order (dung chung voi
+  // quyen xoa moi don - coi nhu quyen "xu ly moi don hang" noi chung).
+  const canEditAny = isLeader || hasPermission(req.user.id, 'delete_any_order');
+  const isOwnerSales = roles.includes('sales') && order.sales_user_id === req.user.id;
+
+  if (!canEditAny && !isOwnerSales) {
+    return res.status(403).json({ error: 'Ban khong co quyen sua don hang nay.' });
+  }
+  // Sales thuong (khong co toan quyen): chi duoc tu sua khi don CON "cho soan hang" hoan toan
+  // (chua kho nao giao xong/co hang tra) - tranh sua nham lam roi du lieu kho da xu ly xong.
+  if (!canEditAny && order.status !== 'cho_soan') {
+    return res.status(400).json({
+      error: 'Don hang nay da duoc kho xu ly (khong con "cho soan hang"), khong the tu sua. Lien he quan ly neu can sua.',
+    });
+  }
+
+  const { customer_name, note, order_code, order_type, warehouse_ids } = req.body || {};
   const updates = [];
   const params = [];
+
   if (typeof customer_name === 'string' && customer_name.trim()) {
     updates.push('customer_name = ?');
     params.push(customer_name.trim());
@@ -208,14 +227,93 @@ router.patch('/:id', requireAuth, (req, res) => {
     updates.push('note = ?');
     params.push(note);
   }
-  if (updates.length === 0) return res.status(400).json({ error: 'Khong co gi de cap nhat.' });
+  if (order_type === 'xuat_kho' || order_type === 'nhap_kho') {
+    updates.push('order_type = ?');
+    params.push(order_type);
+  }
 
-  updates.push("updated_at = datetime('now')");
-  params.push(req.params.id);
-  db.prepare(`UPDATE orders SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  // Doi danh sach kho nhan don hang - chi cho phep khi CHUA co kho nao bat dau xac nhan
+  // (tranh lam sai lech du lieu da xu ly), tru khi nguoi sua co toan quyen (quan ly/delete_any_order).
+  let warehouseIdsChanged = false;
+  if (typeof warehouse_ids === 'string' && warehouse_ids.trim()) {
+    const newIds = [...new Set(
+      warehouse_ids.split(',').map((s) => parseInt(s.trim(), 10)).filter((n) => Number.isInteger(n) && n > 0)
+    )];
+    if (newIds.length === 0) {
+      return res.status(400).json({ error: 'Vui long chon it nhat 1 kho nhan don hang.' });
+    }
+    const whPlaceholders = newIds.map(() => '?').join(',');
+    const validWarehouses = db
+      .prepare(`SELECT * FROM warehouses WHERE is_active = 1 AND id IN (${whPlaceholders})`)
+      .all(...newIds);
+    if (validWarehouses.length !== newIds.length) {
+      return res.status(400).json({ error: 'Mot hoac nhieu kho da chon khong hop le.' });
+    }
+
+    const currentOw = db.prepare('SELECT * FROM order_warehouses WHERE order_id = ?').all(order.id);
+    const currentIds = currentOw.map((ow) => ow.warehouse_id).sort((a, b) => a - b).join(',');
+    const sameAsCurrent = currentIds === [...newIds].sort((a, b) => a - b).join(',');
+
+    if (!sameAsCurrent) {
+      const anyStarted = currentOw.some((ow) => ow.confirmed_by_username);
+      if (anyStarted && !canEditAny) {
+        return res.status(400).json({
+          error: 'Da co kho xac nhan xu ly don nay, khong the tu doi kho. Lien he quan ly neu can doi.',
+        });
+      }
+      // Bo cac kho khong con trong danh sach moi, them cac kho moi duoc chon (giu nguyen kho cu
+      // neu van con trong danh sach moi, khong mat trang thai/nguoi xac nhan cua kho do).
+      for (const ow of currentOw) {
+        if (!newIds.includes(ow.warehouse_id)) {
+          db.prepare('DELETE FROM order_warehouses WHERE id = ?').run(ow.id);
+        }
+      }
+      const insertOW = db.prepare(
+        'INSERT OR IGNORE INTO order_warehouses (order_id, warehouse_id, status) VALUES (?, ?, ?)'
+      );
+      for (const whId of newIds) {
+        insertOW.run(order.id, whId, 'cho_soan');
+      }
+      db.prepare('UPDATE orders SET warehouse_id = ? WHERE id = ?').run(newIds[0], order.id);
+      warehouseIdsChanged = true;
+    }
+  }
+
+  if (updates.length === 0 && !warehouseIdsChanged) {
+    return res.status(400).json({ error: 'Khong co gi de cap nhat.' });
+  }
+
+  if (updates.length > 0) {
+    updates.push("updated_at = datetime('now')");
+    params.push(req.params.id);
+    db.prepare(`UPDATE orders SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+  }
+
+  // Neu doi kho, trang thai tong hop cua don co the thay doi (vi danh sach kho lien quan thay doi) -
+  // tinh lai cho dung, kem cap nhat updated_at neu chua duoc cap o buoc tren.
+  if (warehouseIdsChanged) {
+    const allStatuses = db
+      .prepare('SELECT status FROM order_warehouses WHERE order_id = ?')
+      .all(order.id)
+      .map((r) => r.status);
+    const aggregateStatus = computeAggregateStatus(allStatuses);
+    db.prepare("UPDATE orders SET status = ?, updated_at = datetime('now') WHERE id = ?").run(
+      aggregateStatus,
+      order.id
+    );
+  }
 
   const updated = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
   updated.warehouses = getOrderWarehouses(updated.id);
+
+  broadcast('order_edited', {
+    order_id: updated.id,
+    customer_name: updated.customer_name,
+    sales_user_id: updated.sales_user_id,
+    updated_by: req.user.username,
+    warehouse_ids: updated.warehouses.map((w) => w.warehouse_id),
+  });
+
   res.json({ order: updated });
 });
 
@@ -277,6 +375,7 @@ router.post(
     broadcast('order_updated', {
       order_id: order.id,
       customer_name: updatedOrder.customer_name,
+      order_type: updatedOrder.order_type,
       warehouse_id: warehouseId,
       warehouse_status: newOwStatus,
       overall_status: aggregateStatus,
@@ -284,9 +383,15 @@ router.post(
       updated_by: req.user.username,
     });
 
+    const statusText =
+      newOwStatus === 'co_hang_tra'
+        ? 'Có hàng trả'
+        : updatedOrder.order_type === 'nhap_kho'
+        ? 'Đã nhập hàng'
+        : 'Đã giao hàng';
     sendPushToUsers([updatedOrder.sales_user_id], {
       title: '📦 Đơn hàng cập nhật',
-      body: `${updatedOrder.customer_name}: ${newOwStatus === 'co_hang_tra' ? 'Có hàng trả' : 'Đã giao hàng'}`,
+      body: `${updatedOrder.customer_name}: ${statusText}`,
       url: '/sales.html',
     }).catch((err) => console.error('[push] Loi:', err.message));
 
@@ -300,7 +405,16 @@ router.get('/', requireAuth, (req, res) => {
   const params = [];
   let sql;
 
-  const isWarehouseScoped = getUserRoles(req.user).includes('warehouse') && !getUserRoles(req.user).includes('leader') && !hasPermission(req.user.id, 'view_all');
+  // CHI thu kho "thuan" (khong kiem them vai tro sales) moi bi gioi han xem theo dung kho cua ho.
+  // Neu tai khoan co CA vai tro sales, khi ho dang o "view sales" (trang Dang don / Don hang) van
+  // phai thay DUOC MOI don minh tao du don do gan kho nao - vi khach co the mua hang qua kho KHAC
+  // voi kho ho duoc gan lam thu kho. Trang Xu ly kho (khong gui view=sales) van gioi han nhu cu,
+  // vi luc do ho dang lam viec voi vai tro thu kho, can dung field my_status rieng cua kho ho.
+  const isWarehouseScoped =
+    getUserRoles(req.user).includes('warehouse') &&
+    !getUserRoles(req.user).includes('leader') &&
+    !hasPermission(req.user.id, 'view_all') &&
+    !(getUserRoles(req.user).includes('sales') && req.query.view === 'sales');
 
   if (isWarehouseScoped) {
     // Thu kho: chi xem don co gan kho cua minh, va loc theo TRANG THAI RIENG cua kho ho
@@ -358,6 +472,20 @@ router.get('/', requireAuth, (req, res) => {
   const orders = db.prepare(sql).all(...params);
   attachWarehousesInfo(orders);
 
+  res.json({ orders });
+});
+
+// ============ Tra cuu don hang theo ma don - dung cho autocomplete o phan lap phieu tra hang
+// (nhap/chon dung ma don se tu dien ten khach, khoi phai nho/danh may lai ten) ============
+router.get('/lookup-by-code', requireAuth, (req, res) => {
+  const code = (req.query.code || '').trim();
+  if (!code) return res.json({ orders: [] });
+  const orders = db
+    .prepare(
+      `SELECT id, order_code, customer_name, order_type, warehouse_id, created_at
+       FROM orders WHERE order_code LIKE ? ORDER BY created_at DESC LIMIT 20`
+    )
+    .all(`%${code}%`);
   res.json({ orders });
 });
 
