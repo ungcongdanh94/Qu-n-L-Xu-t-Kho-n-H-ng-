@@ -151,7 +151,7 @@
         .map((p) => {
           const reassignHtml =
             canReassignPhotoWarehouse && p.type !== 'order'
-              ? `<select style="font-size:11px; margin-top:4px; padding:3px;" onchange="reassignPhotoWarehouse(${p.id}, this.value)">
+              ? `<select style="font-size:13px; margin-top:6px; padding:6px 8px; width:100%;" onchange="reassignPhotoWarehouse(${p.id}, this.value)">
                    <option value="">🔄 Đổi kho...</option>
                    ${(data.order.warehouses || [])
                      .filter((w) => w.warehouse_id !== p.warehouse_id)

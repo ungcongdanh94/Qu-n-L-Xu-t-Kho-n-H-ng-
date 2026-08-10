@@ -131,7 +131,9 @@ textarea { resize: vertical; min-height: 60px; }
 .btn:hover { background: var(--primary-dark); }
 .btn:disabled { background: #9ca3af; cursor: not-allowed; }
 .btn.secondary { background: #6b7280; }
+.btn.secondary:hover { background: #57606f; }
 .btn.danger { background: var(--danger); }
+.btn.danger:hover { background: #b91c1c; }
 
 .file-drop {
   border: 2px dashed var(--border);
@@ -166,8 +168,11 @@ textarea { resize: vertical; min-height: 60px; }
   padding: 12px 0;
   border-bottom: 1px solid var(--border);
   cursor: pointer;
+  transition: background 0.15s;
 }
 .order-item:last-child { border-bottom: none; }
+/* Rê chuột tren desktop can co phan hoi thi giac ro rang (khac voi cham tren dien thoai) */
+.order-item:hover { background: #f8fafc; }
 .order-item img {
   width: 64px; height: 64px; object-fit: cover; border-radius: 8px; flex-shrink: 0;
   background: #eee;
@@ -332,4 +337,9 @@ textarea { resize: vertical; min-height: 60px; }
 @media (min-width: 640px) {
   .modal-overlay { align-items: center; padding: 16px; }
   .modal-overlay .card { border-radius: 12px; max-height: 90vh; max-width: 640px; }
+}
+/* Man hinh may tinh rong: khung chi tiet duoc them nhieu noi dung gan day (chip kho, 2 anh
+   phieu/hang thuc tra canh nhau, form sua...) nen can rong hon de khong bi don, dung het loi. */
+@media (min-width: 1024px) {
+  .modal-overlay .card { max-width: 760px; }
 }
