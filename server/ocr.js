@@ -92,36 +92,64 @@ const WEIGHT_NUMBER_PATTERN = /\b\d{1,4}\.\d{1,2}\b/g;
 function guessTotalWeightKgFromWords(words) {
   if (!words || words.length === 0) return null;
 
-  // Tim vi tri (truc Y) cua cum "tong" + "thanh"/"tien"/"cong" xuat hien gan nhau
-  const totalRowYs = [];
+  // Tim vi tri (truc Y) cua cum "tong" + "thanh"/"tien"/"cong" xuat hien gan nhau, HOAC 1 tu
+  // dinh lien "tongcong"/"tongthanhtien" (truong hop Tesseract doc dinh lien khong co khoang trang).
+  const totalRowMatches = [];
   for (let i = 0; i < words.length; i++) {
     const t = normalizeToken(words[i].text);
+    if (t === 'tongcong' || t === 'tongthanhtien') {
+      totalRowMatches.push(words[i]);
+      continue;
+    }
     if (t !== 'tong') continue;
     for (let j = i + 1; j < Math.min(i + 6, words.length); j++) {
       const t2 = normalizeToken(words[j].text);
       if (t2 === 'thanh' || t2 === 'tien' || t2 === 'cong') {
-        totalRowYs.push((words[i].bbox.y0 + words[i].bbox.y1) / 2);
+        totalRowMatches.push(words[i]);
         break;
       }
     }
   }
-  if (totalRowYs.length === 0) return null;
-  // Neu tim thay nhieu dong (vi du co ca "Tổng số lượng" o dau bang), uu tien dong CUOI CUNG -
-  // dong tong ket luon nam o gan cuoi bang, khong phai o dau.
-  const targetY = totalRowYs[totalRowYs.length - 1];
-  const rowTolerance = 22; // px - du rong de gom cac chu tren cung 1 hang du doc lech doi chut
 
-  const candidates = words.filter((w) => {
-    const text = (w.text || '').trim();
-    if (!/^\d{1,4}[.,]\d{1,2}$/.test(text)) return false;
-    const wy = (w.bbox.y0 + w.bbox.y1) / 2;
-    return Math.abs(wy - targetY) <= rowTolerance;
-  });
-  if (candidates.length === 0) return null;
-  // Cot "Số kg" luon la cot ngoai cung ben PHAI trong bang - uu tien chu nam xa nhat ve ben phai.
-  candidates.sort((a, b) => b.bbox.x0 - a.bbox.x0);
-  const value = parseFloat(candidates[0].text.replace(',', '.'));
-  return Number.isFinite(value) && value > 0 && value < 100000 ? value : null;
+  const isWeightNumber = (text) => /^\d{1,4}[.,]\d{1,2}$/.test((text || '').trim());
+  const centerY = (w) => (w.bbox.y0 + w.bbox.y1) / 2;
+
+  if (totalRowMatches.length > 0) {
+    // Neu tim thay nhieu dong (vi du co ca "Tổng số lượng" o dau bang), uu tien dong CUOI CUNG -
+    // dong tong ket luon nam o gan cuoi bang, khong phai o dau.
+    const anchor = totalRowMatches[totalRowMatches.length - 1];
+    const targetY = centerY(anchor);
+    // Dung chieu cao cua chinh chu "Tong" lam moc, nhan he so de ra do dung sai theo hang - dang
+    // tin cay hon 1 con so pixel co dinh, vi anh co the bi nen/thu nho kich thuoc khac nhau.
+    const wordHeight = Math.max(anchor.bbox.y1 - anchor.bbox.y0, 14);
+    const rowTolerance = wordHeight * 1.8;
+
+    const candidates = words.filter((w) => isWeightNumber(w.text) && Math.abs(centerY(w) - targetY) <= rowTolerance);
+    if (candidates.length > 0) {
+      // Cot "Số kg" luon la cot ngoai cung ben PHAI trong bang - uu tien chu nam xa nhat ve ben phai.
+      candidates.sort((a, b) => b.bbox.x0 - a.bbox.x0);
+      const value = parseFloat(candidates[0].text.replace(',', '.'));
+      if (Number.isFinite(value) && value > 0 && value < 100000) return value;
+    }
+  }
+
+  // Phuong an cuoi: khong tim duoc dong "Tong..." (co the OCR doc sai chu do nay hoan toan) -
+  // lay so dang thap phan nam o HANG DUOI CUNG trang (Y lon nhat), vi tong luon nam o cuoi bang.
+  // Trong hang duoi cung do (co the co ca cot SL va cot Số kg cung dang thap phan), uu tien so
+  // nam ben PHAI nhat - dung vi tri cot "Số kg" trong mau phieu. Chi xet nua duoi trang de tranh
+  // bat nham so o dong dau bang.
+  const maxY = Math.max(...words.map((w) => w.bbox.y1));
+  const weightWords = words.filter((w) => isWeightNumber(w.text) && centerY(w) > maxY * 0.5);
+  if (weightWords.length > 0) {
+    const bottomY = Math.max(...weightWords.map((w) => centerY(w)));
+    const sameRowTolerance = Math.max(...weightWords.map((w) => w.bbox.y1 - w.bbox.y0)) * 1.5;
+    const bottomRow = weightWords.filter((w) => Math.abs(centerY(w) - bottomY) <= sameRowTolerance);
+    bottomRow.sort((a, b) => b.bbox.x0 - a.bbox.x0);
+    const value = parseFloat(bottomRow[0].text.replace(',', '.'));
+    if (Number.isFinite(value) && value > 0 && value < 100000) return value;
+  }
+
+  return null;
 }
 
 // Cach 2 (du phong): neu khong co du lieu toa do (data.words rong) hoac cach 1 khong tim ra,
