@@ -213,6 +213,13 @@
             order_type: document.getElementById('orderType').value,
             customer_name: customerName,
             order_code: orderCode,
+            // Tu dong luu so kg OCR doc duoc (neu co) - KHONG hien thi/yeu cau sales lam gi ca,
+            // theo dung yeu cau: chi Admin moi thay/sua duoc muc nay (qua nut Sua don sau nay
+            // neu OCR doc sai).
+            total_weight_kg:
+              window.__scannedOcr && window.__scannedOcr.totalWeightGuess !== null && window.__scannedOcr.totalWeightGuess !== undefined
+                ? window.__scannedOcr.totalWeightGuess
+                : '',
             note,
             ocr_raw_text: window.__scannedOcr ? window.__scannedOcr.rawText : '',
             ocr_guess: window.__scannedOcr ? window.__scannedOcr.guess : '',

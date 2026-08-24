@@ -67,7 +67,7 @@ router.post(
     // QUAN TRONG: doc OCR TRUOC tren anh GOC (do phan giai cao nhat, chu nho tren phieu
     // van con ro net) - roi moi nen anh lai de tiet kiem dung luong luu tru. Neu nen truoc
     // roi moi OCR, chu nho co the bi mo di, lam giam do chinh xac nhan dien ro ret.
-    let ocrResult = { rawText: '', guess: '', suggestedName: '', orderCode: '' };
+    let ocrResult = { rawText: '', guess: '', suggestedName: '', orderCode: '', totalWeightGuess: null };
     try {
       ocrResult = await runOcr(req.file.path);
     } catch (err) {
@@ -124,16 +124,19 @@ router.post('/', requireAuth, requireRole('sales', 'leader'), async (req, res) =
   const orderType = req.body.order_type === 'nhap_kho' ? 'nhap_kho' : 'xuat_kho';
   const finalName = (req.body.customer_name || '').trim() || 'Chua xac dinh';
   const orderCode = (req.body.order_code || '').trim() || null;
+  const rawWeight = parseFloat(req.body.total_weight_kg);
+  const totalWeightKg = Number.isFinite(rawWeight) && rawWeight >= 0 ? rawWeight : null;
 
   const info = db
     .prepare(
-      `INSERT INTO orders (customer_name, order_type, order_code, ocr_raw_text, ocr_guess, sales_user_id, sales_username, warehouse_id, order_photo_path, status, note)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'cho_soan', ?)`
+      `INSERT INTO orders (customer_name, order_type, order_code, total_weight_kg, ocr_raw_text, ocr_guess, sales_user_id, sales_username, warehouse_id, order_photo_path, status, note)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'cho_soan', ?)`
     )
     .run(
       finalName,
       orderType,
       orderCode,
+      totalWeightKg,
       req.body.ocr_raw_text || null,
       req.body.ocr_guess || null,
       req.user.id,
@@ -210,7 +213,7 @@ router.patch('/:id', requireAuth, (req, res) => {
     });
   }
 
-  const { customer_name, note, order_code, order_type, warehouse_ids } = req.body || {};
+  const { customer_name, note, order_code, order_type, warehouse_ids, total_weight_kg } = req.body || {};
   const updates = [];
   const params = [];
 
@@ -222,6 +225,11 @@ router.patch('/:id', requireAuth, (req, res) => {
   if (typeof order_code === 'string') {
     updates.push('order_code = ?');
     params.push(order_code.trim() || null);
+  }
+  if (total_weight_kg !== undefined && canEditAny) {
+    const parsedWeight = parseFloat(total_weight_kg);
+    updates.push('total_weight_kg = ?');
+    params.push(Number.isFinite(parsedWeight) && parsedWeight >= 0 ? parsedWeight : null);
   }
   if (typeof note === 'string') {
     updates.push('note = ?');

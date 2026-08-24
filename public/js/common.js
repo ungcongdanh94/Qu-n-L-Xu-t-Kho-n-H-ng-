@@ -182,7 +182,7 @@ function canEditOrder(user, order) {
 
 // Tra ve HTML form sua thong tin don hang - dung chung cho sales.html va myorders.html.
 // canEditWarehouses = false khi da co kho xac nhan xu ly (khoa checkbox lai, chi quan ly moi doi duoc).
-function renderOrderEditForm(order, warehousesList, canEditWarehouses) {
+function renderOrderEditForm(order, warehousesList, canEditWarehouses, canEditAny) {
   const currentWhIds = (order.warehouses || []).map((w) => String(w.warehouse_id));
   const escapeAttr = (s) => (s || '').toString().replace(/"/g, '&quot;');
   const whHtml = (warehousesList || [])
@@ -205,6 +205,10 @@ function renderOrderEditForm(order, warehousesList, canEditWarehouses) {
     </select>
     <label>Mã đơn hàng</label>
     <input type="text" id="editOrderCode" value="${escapeAttr(order.order_code)}" placeholder="Ví dụ: BH83746" />
+    ${canEditAny ? `
+    <label>Tổng số kg (chỉ Admin thấy/sửa được mục này)</label>
+    <input type="number" id="editTotalWeightKg" value="${order.total_weight_kg !== null && order.total_weight_kg !== undefined ? order.total_weight_kg : ''}" placeholder="Ví dụ: 48.02" step="0.01" min="0" inputmode="decimal" />
+    ` : ''}
     <label>Tên khách hàng</label>
     <input type="text" id="editCustomerName" value="${escapeAttr(order.customer_name)}" />
     <label>Ghi chú</label>
@@ -237,7 +241,7 @@ async function startEditOrder(orderId) {
     const canEditWarehouses = canEditAny || !anyStarted;
 
     document.getElementById('modalTitle').textContent = '✏️ Sửa đơn hàng';
-    document.getElementById('modalContent').innerHTML = renderOrderEditForm(order, whData.warehouses, canEditWarehouses);
+    document.getElementById('modalContent').innerHTML = renderOrderEditForm(order, whData.warehouses, canEditWarehouses, canEditAny);
   } catch (err) {
     alert('Không tải được thông tin để sửa: ' + err.message);
   }
@@ -268,6 +272,8 @@ async function submitOrderEdit(orderId) {
     customer_name: customerName,
     note: document.getElementById('editNote').value.trim(),
   };
+  const weightEl = document.getElementById('editTotalWeightKg');
+  if (weightEl) body.total_weight_kg = weightEl.value.trim();
 
   // Chi gui warehouse_ids khi checkbox KHONG bi khoa (con duoc phep doi kho)
   const whCheckboxes = document.querySelectorAll('.edit-warehouse-checkbox');

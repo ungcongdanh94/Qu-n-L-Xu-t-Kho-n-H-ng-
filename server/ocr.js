@@ -76,6 +76,33 @@ function guessOrderCode(rawText) {
   return 'BH' + digits;
 }
 
+// Doan tong so kg cua don hang, tu dong "Tong thanh tien" o cuoi bang (theo dung mau phieu cua
+// CONG THANH: dong nay co CA tong tien VA tong so kg nam canh nhau, vi du "3,530,989   48.02").
+// Dau hieu phan biet: tien luon co dau phay ngan hang nghin (khong co dau cham thap phan),
+// con so kg luon co dang so thap phan (XX.XX) - nen chi lay so dang thap phan tren dong nay.
+// CHI la goi y de dien san - sales van xac nhan/sua lai truoc khi luu, tranh sai so lieu thong ke.
+const WEIGHT_LINE_KEYWORDS = ['tong thanh tien', 'tong cong'];
+const WEIGHT_NUMBER_PATTERN = /\b\d{1,4}\.\d{1,2}\b/g;
+
+function guessTotalWeightKg(rawText) {
+  const lines = (rawText || '').split('\n');
+  for (const line of lines) {
+    const normalized = stripDiacritics(line).replace(/\s+/g, ' ').trim();
+    if (WEIGHT_LINE_KEYWORDS.some((kw) => normalized.includes(kw))) {
+      const matches = line.match(WEIGHT_NUMBER_PATTERN);
+      if (matches && matches.length > 0) {
+        // Neu dong co nhieu so thap phan, lay so CUOI CUNG (thuong la cot ben phai nhat = Số kg,
+        // theo dung thu tu cot trong mau phieu: ... Thành tiền | Số kg).
+        const value = parseFloat(matches[matches.length - 1]);
+        if (Number.isFinite(value) && value > 0 && value < 100000) {
+          return value;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function stripDiacritics(str) {
   return str
     .normalize('NFD')
@@ -321,11 +348,13 @@ async function runOcr(imagePath) {
 
   const matchedCustomer = await findClosestCustomer(guess);
   const orderCode = guessOrderCode(rawText);
+  const totalWeightGuess = guessTotalWeightKg(rawText);
   return {
     rawText,
     guess,
     suggestedName: matchedCustomer || guess,
     orderCode,
+    totalWeightGuess,
   };
 }
 

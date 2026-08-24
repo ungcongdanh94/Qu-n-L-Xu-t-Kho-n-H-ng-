@@ -45,6 +45,7 @@ CREATE TABLE IF NOT EXISTS orders (
   customer_name TEXT NOT NULL,
   order_type TEXT NOT NULL DEFAULT 'xuat_kho' CHECK(order_type IN ('xuat_kho','nhap_kho')),
   order_code TEXT,
+  total_weight_kg REAL,
   ocr_raw_text TEXT,
   ocr_guess TEXT,
   sales_user_id INTEGER NOT NULL,
@@ -150,6 +151,9 @@ if (!columnExists('orders', 'order_type')) {
 }
 if (!columnExists('orders', 'order_code')) {
   db.exec('ALTER TABLE orders ADD COLUMN order_code TEXT');
+}
+if (!columnExists('orders', 'total_weight_kg')) {
+  db.exec('ALTER TABLE orders ADD COLUMN total_weight_kg REAL');
 }
 if (!columnExists('users', 'roles')) {
   db.exec("ALTER TABLE users ADD COLUMN roles TEXT NOT NULL DEFAULT '[]'");

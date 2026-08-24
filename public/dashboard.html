@@ -132,6 +132,7 @@
               <div class="meta">
                 <span class="badge ${o.order_type}">${orderTypeLabel(o.order_type)}</span>
                 <span class="badge ${o.status}">${statusLabel(o.status, o.order_type)}</span>
+                ${o.total_weight_kg !== null && o.total_weight_kg !== undefined ? `<span class="badge" style="background:#f1f5f9; color:#334155;">⚖️ ${o.total_weight_kg} kg</span>` : ''}
               </div>
               ${renderWarehouseChips(o.warehouses, o.order_type)}
               <div class="meta" style="margin-top:6px;">
@@ -150,10 +151,15 @@
     function renderSummary(orders) {
       const counts = { cho_soan: 0, da_soan: 0, co_hang_tra: 0 };
       orders.forEach((o) => { if (counts[o.status] !== undefined) counts[o.status]++; });
+      // Cong don tong so kg cua danh sach dang xem (theo dung bo loc ngay/trang thai/loai don/kho
+      // hien tai) - chi cong nhung don co nhap so kg, don khong nhap thi bo qua (khong tinh la 0).
+      const totalWeight = orders.reduce((sum, o) => sum + (typeof o.total_weight_kg === 'number' ? o.total_weight_kg : 0), 0);
+      const ordersWithWeight = orders.filter((o) => typeof o.total_weight_kg === 'number').length;
       document.getElementById('summary').innerHTML = `
         <div class="badge cho_soan" style="font-size:14px; padding:8px 14px;">Chờ soạn: ${counts.cho_soan}</div>
         <div class="badge da_soan" style="font-size:14px; padding:8px 14px;">Đã giao: ${counts.da_soan}</div>
         <div class="badge co_hang_tra" style="font-size:14px; padding:8px 14px;">Hàng trả: ${counts.co_hang_tra}</div>
+        ${ordersWithWeight > 0 ? `<div class="badge" style="font-size:14px; padding:8px 14px; background:#f1f5f9; color:#334155;">⚖️ Tổng: ${totalWeight.toFixed(2)} kg (${ordersWithWeight} đơn có ghi kg)</div>` : ''}
       `;
     }
 
