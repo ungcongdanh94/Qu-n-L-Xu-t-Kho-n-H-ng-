@@ -6,7 +6,7 @@ const { requireAuth, requireRole, hasPermission, getUserRoles } = require('../mi
 const { broadcast } = require('../sse');
 const { sendPushToUsers, getRelevantUserIds, getLeaderUserIds } = require('../push');
 const { upload, uploadDir } = require('../uploadConfig');
-const { compressImage } = require('../imageUtils');
+const { compressImage, isLikelyBlurry } = require('../imageUtils');
 
 const router = express.Router();
 
@@ -91,6 +91,14 @@ router.post('/:id/goods-photo', requireAuth, requireRole('warehouse', 'leader'),
     return res.status(400).json({ error: 'Phieu nay khong o trang thai cho kho chup hang thuc tra.' });
   }
   if (!req.file) return res.status(400).json({ error: 'Vui long gui kem hinh hang thuc tra.' });
+  const blurry = await isLikelyBlurry(req.file.path);
+  if (blurry) {
+    fs.unlink(req.file.path, () => {});
+    return res.status(400).json({
+      error: 'Ảnh bị mờ, vui lòng chụp lại rõ nét hơn trước khi lưu.',
+      blurRejected: true,
+    });
+  }
   await compressImage(req.file.path);
 
   db.prepare(

@@ -7,7 +7,7 @@ const { runOcr } = require('../ocr');
 const { broadcast } = require('../sse');
 const { sendPushToUsers, getRelevantUserIds } = require('../push');
 const { upload, uploadDir } = require('../uploadConfig');
-const { compressImage } = require('../imageUtils');
+const { compressImage, isLikelyBlurry } = require('../imageUtils');
 
 const router = express.Router();
 
@@ -425,6 +425,18 @@ router.post(
       return res.status(403).json({ error: 'Kho nay khong duoc gan vao don hang nay.' });
     }
     if (!req.file) return res.status(400).json({ error: 'Vui long gui kem hinh anh.' });
+    // Kiem tra do net TRUOC khi nen anh (nen anh se lam mo bot, kiem tra sau se de bo sot).
+    // Neu qua mo: TU CHOI luu, xoa file vua tai len, bat buoc chup lai - khong luu bat ky thay
+    // doi trang thai/du lieu nao, de dam bao anh xac nhan luon ro net, tranh rac roi ve sau khi
+    // can doi chieu lai (ban hang khieu nai, kiem tra hang thuc te...).
+    const blurry = await isLikelyBlurry(req.file.path);
+    if (blurry) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({
+        error: 'Ảnh bị mờ, vui lòng chụp lại rõ nét hơn trước khi lưu.',
+        blurRejected: true,
+      });
+    }
     await compressImage(req.file.path);
 
     const type = req.body.type === 'return' ? 'return' : 'packed';

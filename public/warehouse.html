@@ -279,6 +279,7 @@
       } catch (err) {
         msg.className = 'error-msg';
         msg.textContent = err.message;
+        inputEl.value = ''; // cho phep chon/chup lai ngay, kho phai doi reset thu cong
       }
     }
 
