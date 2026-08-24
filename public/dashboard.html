@@ -20,12 +20,26 @@
       <div id="summary" style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap;"></div>
       <div id="weightSummary" style="margin-bottom:14px;"></div>
 
-      <div class="day-nav">
+      <div style="display:flex; gap:8px; margin-bottom:10px;">
+        <button id="viewModeDay" class="btn secondary" style="margin:0; width:auto; padding:6px 14px; font-size:13px;" onclick="setViewMode('day')">📅 Xem theo ngày</button>
+        <button id="viewModeMonth" class="btn secondary" style="margin:0; width:auto; padding:6px 14px; font-size:13px;" onclick="setViewMode('month')">🗓️ Xem theo tháng</button>
+        <button class="btn secondary" style="margin:0; width:auto; padding:6px 14px; font-size:13px;" onclick="startWeightBackfill()">🔄 Quét lại kg đơn cũ (từ 1/8)</button>
+      </div>
+      <div id="backfillStatus" style="display:none; margin-bottom:10px;"></div>
+
+      <div class="day-nav" id="dayNavRow">
         <button onclick="shiftDay(-1)">◀</button>
         <input type="date" id="dayFilter" onchange="onDayChange()" />
         <button onclick="shiftDay(1)">▶</button>
         <button class="today-btn" onclick="goToday()">Hôm nay</button>
         <button class="today-btn" onclick="clearDay()">Xem tất cả ngày</button>
+      </div>
+
+      <div class="day-nav" id="monthNavRow" style="display:none;">
+        <button onclick="shiftMonth(-1)">◀</button>
+        <input type="month" id="monthFilter" onchange="onMonthChange()" />
+        <button onclick="shiftMonth(1)">▶</button>
+        <button class="today-btn" onclick="goCurrentMonth()">Tháng này</button>
       </div>
 
       <div class="filters">
@@ -66,6 +80,82 @@
     document.getElementById('topbar').innerHTML = renderTopbar('Tổng quan');
     document.getElementById('tabs').innerHTML = renderNavTabs('dashboard');
     document.getElementById('dayFilter').value = todayStr();
+    document.getElementById('monthFilter').value = currentMonthStr();
+
+    let viewMode = 'day'; // 'day' hoac 'month'
+    function setViewMode(mode) {
+      viewMode = mode;
+      document.getElementById('dayNavRow').style.display = mode === 'day' ? '' : 'none';
+      document.getElementById('monthNavRow').style.display = mode === 'month' ? '' : 'none';
+      document.getElementById('viewModeDay').style.background = mode === 'day' ? 'var(--primary)' : '';
+      document.getElementById('viewModeMonth').style.background = mode === 'month' ? 'var(--primary)' : '';
+      loadOrders();
+    }
+    setViewMode('day');
+
+    let backfillPollTimer = null;
+    async function startWeightBackfill() {
+      if (!confirm('Quét lại toàn bộ đơn từ 1/8/2026 đến nay chưa có số kg? Có thể mất vài phút tuỳ số lượng đơn.')) return;
+      try {
+        const data = await apiFetch('/api/orders/backfill-weight', {
+          method: 'POST',
+          body: JSON.stringify({ from_date: '2026-08-01' }),
+        });
+        if (data.total === 0) {
+          showToast('✅ Không có đơn nào cần quét lại (đã có đủ số kg hoặc không có đơn trong khoảng này).');
+          return;
+        }
+        showToast(`🔄 Đang quét lại ${data.total} đơn, chạy trong nền...`);
+        pollBackfillStatus();
+      } catch (err) {
+        alert(err.message);
+      }
+    }
+
+    async function pollBackfillStatus() {
+      const el = document.getElementById('backfillStatus');
+      el.style.display = 'block';
+      if (backfillPollTimer) clearInterval(backfillPollTimer);
+      backfillPollTimer = setInterval(async () => {
+        try {
+          const status = await apiFetch('/api/orders/backfill-weight/status');
+          if (status.total === 0) {
+            el.style.display = 'none';
+            clearInterval(backfillPollTimer);
+            return;
+          }
+          const pct = Math.round((status.processed / status.total) * 100);
+          el.innerHTML = `<p class="hint">🔄 Đang quét: ${status.processed}/${status.total} đơn (${pct}%) - đã tìm được ${status.updated} số kg.</p>`;
+          if (!status.running) {
+            clearInterval(backfillPollTimer);
+            el.innerHTML = `<p class="hint">✅ Đã quét xong ${status.total} đơn, tìm được số kg cho ${status.updated} đơn.</p>`;
+            showToast(`✅ Quét xong! Tìm được số kg cho ${status.updated}/${status.total} đơn.`);
+            loadOrders();
+            setTimeout(() => { el.style.display = 'none'; }, 6000);
+          }
+        } catch (err) {
+          clearInterval(backfillPollTimer);
+        }
+      }, 2000);
+    }
+
+    // Neu co job dang chay san (vi du admin reload lai trang giua chung) - tiep tuc theo doi luon
+    apiFetch('/api/orders/backfill-weight/status')
+      .then((status) => { if (status.running) pollBackfillStatus(); })
+      .catch(() => {});
+
+    function shiftMonth(delta) {
+      const el = document.getElementById('monthFilter');
+      el.value = addMonthsStr(el.value || currentMonthStr(), delta);
+      loadOrders();
+    }
+    function goCurrentMonth() {
+      document.getElementById('monthFilter').value = currentMonthStr();
+      loadOrders();
+    }
+    function onMonthChange() {
+      loadOrders();
+    }
 
     function shiftDay(delta) {
       const el = document.getElementById('dayFilter');
@@ -105,6 +195,7 @@
       const orderType = document.getElementById('orderTypeFilter').value;
       const customer = document.getElementById('customerFilter').value.trim();
       const date = document.getElementById('dayFilter').value;
+      const month = document.getElementById('monthFilter').value;
       const warehouseId = document.getElementById('warehouseFilter').value;
       const el = document.getElementById('orderList');
       el.innerHTML = 'Đang tải...';
@@ -113,7 +204,11 @@
       if (status) params.set('status', status);
       if (orderType) params.set('order_type', orderType);
       if (customer) params.set('customer', customer);
-      if (date) params.set('date', date);
+      if (viewMode === 'month') {
+        if (month) params.set('month', month);
+      } else if (date) {
+        params.set('date', date);
+      }
       if (warehouseId) params.set('warehouse_id', warehouseId);
 
       try {
@@ -123,7 +218,11 @@
           el.innerHTML = '<p class="hint">Không có đơn hàng nào phù hợp.</p>';
           return;
         }
-        el.innerHTML = data.orders
+        const cappedNote =
+          data.orders.length >= 3000
+            ? '<p class="hint" style="color:var(--warning);">⚠️ Danh sách/thống kê đang bị giới hạn ở 3000 đơn gần nhất trong khoảng đang xem - nếu thấy thiếu, thử thu hẹp bộ lọc lại.</p>'
+            : '';
+        el.innerHTML = cappedNote + data.orders
           .map(
             (o) => `
           <div class="order-item">

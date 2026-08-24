@@ -487,6 +487,60 @@ router.post(
   }
 );
 
+// ============ Quet lai OCR hang loat de bo sung so kg cho don CU (chi Quan ly) ============
+// Chay NGAM trong nen (khong giu request cho xong het, vi co the mat vai phut neu nhieu don) -
+// frontend goi lien tuc GET /backfill-weight/status de xem tien do. Luu y: OCR chay tren ANH DA
+// NEN san (vi anh goc do phan giai cao khong duoc giu lai sau khi luu don), nen do chinh xac se
+// thap hon 1 chut so voi OCR luc quet lan dau tren anh goc.
+let backfillJob = { running: false, total: 0, processed: 0, updated: 0, startedAt: null, finishedAt: null };
+
+router.post('/backfill-weight', requireAuth, requireRole('leader'), (req, res) => {
+  if (backfillJob.running) {
+    return res.status(400).json({ error: 'Đang có 1 lần quét khác đang chạy, vui lòng đợi hoàn tất.' });
+  }
+  const fromDate = (req.body && req.body.from_date) || '2026-08-01';
+  const targets = db
+    .prepare(
+      `SELECT id, order_photo_path FROM orders
+       WHERE total_weight_kg IS NULL AND date(created_at) >= date(?) AND order_photo_path IS NOT NULL`
+    )
+    .all(fromDate);
+
+  backfillJob = {
+    running: true,
+    total: targets.length,
+    processed: 0,
+    updated: 0,
+    startedAt: new Date().toISOString(),
+    finishedAt: null,
+  };
+  res.json({ started: true, total: targets.length });
+
+  (async () => {
+    for (const o of targets) {
+      try {
+        const fullPath = path.join(uploadDir, o.order_photo_path);
+        if (fs.existsSync(fullPath)) {
+          const ocrResult = await runOcr(fullPath);
+          if (ocrResult.totalWeightGuess !== null && ocrResult.totalWeightGuess !== undefined) {
+            db.prepare('UPDATE orders SET total_weight_kg = ? WHERE id = ?').run(ocrResult.totalWeightGuess, o.id);
+            backfillJob.updated++;
+          }
+        }
+      } catch (err) {
+        console.error('[backfill-weight] Loi xu ly don', o.id, err.message);
+      }
+      backfillJob.processed++;
+    }
+    backfillJob.running = false;
+    backfillJob.finishedAt = new Date().toISOString();
+  })();
+});
+
+router.get('/backfill-weight/status', requireAuth, requireRole('leader'), (req, res) => {
+  res.json(backfillJob);
+});
+
 // ============ Danh sach don hang (co loc) ============
 router.get('/', requireAuth, (req, res) => {
   const { status, customer, from, to, mine, warehouse_id, order_type, date } = req.query;
@@ -538,7 +592,11 @@ router.get('/', requireAuth, (req, res) => {
     sql += ' AND o.customer_name LIKE ?';
     params.push(`%${customer}%`);
   }
-  if (date) {
+  if (req.query.month) {
+    // Dinh dang YYYY-MM (vi du "2026-08") - loc toan bo don trong thang do
+    sql += " AND strftime('%Y-%m', o.created_at) = ?";
+    params.push(req.query.month);
+  } else if (date) {
     sql += ' AND date(o.created_at) = date(?)';
     params.push(date);
   } else {
@@ -556,7 +614,10 @@ router.get('/', requireAuth, (req, res) => {
     params.push(req.user.id);
   }
 
-  sql += ' ORDER BY o.created_at DESC LIMIT 500';
+  // Tang gioi han tu 500 len 3000: xem theo THANG co the co hang ngan don, neu gioi han qua thap
+  // se lam SAI lech tong so kg/thong ke (vi bi cat bot du lieu ma khong ai biet). Da co index tren
+  // created_at nen truy van van nhanh du gioi han cao hon.
+  sql += ' ORDER BY o.created_at DESC LIMIT 3000';
   const orders = db.prepare(sql).all(...params);
   attachWarehousesInfo(orders);
 

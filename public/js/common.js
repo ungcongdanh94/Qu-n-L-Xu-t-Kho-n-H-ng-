@@ -312,6 +312,15 @@ function addDaysStr(dateStr, delta) {
   d.setDate(d.getDate() + delta);
   return localDateStr(d);
 }
+function currentMonthStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+function addMonthsStr(monthStr, delta) {
+  const [y, m] = monthStr.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
 
 // Mo 1 lop xem hinh phong to, co nut in truc tiep hinh do
 function openImageViewer(url) {
