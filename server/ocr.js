@@ -92,8 +92,31 @@ const WEIGHT_NUMBER_PATTERN = /\b\d{1,4}\.\d{1,2}\b/g;
 function guessTotalWeightKgFromWords(words) {
   if (!words || words.length === 0) return null;
 
-  // Tim vi tri (truc Y) cua cum "tong" + "thanh"/"tien"/"cong" xuat hien gan nhau, HOAC 1 tu
-  // dinh lien "tongcong"/"tongthanhtien" (truong hop Tesseract doc dinh lien khong co khoang trang).
+  const isWeightNumber = (text) => /^\d{1,4}[.,]\d{1,2}$/.test((text || '').trim());
+  const centerY = (w) => (w.bbox.y0 + w.bbox.y1) / 2;
+  const centerX = (w) => (w.bbox.x0 + w.bbox.x1) / 2;
+
+  // Buoc 1: Tim tieu de cot "Số kg" - lay TAM DIEM X cua no lam moc xac dinh dung cot, thay vi
+  // doan "cot ngoai cung ben phai" (khong dang tin cay bang, vi con tuy mau phieu).
+  let weightColumnX = null;
+  for (let i = 0; i < words.length; i++) {
+    const t = normalizeToken(words[i].text);
+    if (t === 'sokg') {
+      weightColumnX = centerX(words[i]);
+      break;
+    }
+    if (t === 'so') {
+      for (let j = i + 1; j < Math.min(i + 3, words.length); j++) {
+        if (normalizeToken(words[j].text) === 'kg') {
+          weightColumnX = (centerX(words[i]) + centerX(words[j])) / 2;
+          break;
+        }
+      }
+      if (weightColumnX !== null) break;
+    }
+  }
+
+  // Buoc 2: Tim hang "Tổng cộng"/"Tổng thành tiền" - lay TAM DIEM Y lam moc xac dinh dung hang.
   const totalRowMatches = [];
   for (let i = 0; i < words.length; i++) {
     const t = normalizeToken(words[i].text);
@@ -111,40 +134,34 @@ function guessTotalWeightKgFromWords(words) {
     }
   }
 
-  const isWeightNumber = (text) => /^\d{1,4}[.,]\d{1,2}$/.test((text || '').trim());
-  const centerY = (w) => (w.bbox.y0 + w.bbox.y1) / 2;
-
-  if (totalRowMatches.length > 0) {
-    // Neu tim thay nhieu dong (vi du co ca "Tổng số lượng" o dau bang), uu tien dong CUOI CUNG -
-    // dong tong ket luon nam o gan cuoi bang, khong phai o dau.
-    const anchor = totalRowMatches[totalRowMatches.length - 1];
+  // Buoc 3: SO GIAO giua cot va hang - lay dung con so nam o vi tri GIAO NHAU cua cot "Số kg"
+  // (theo truc X) va hang "Tổng..." (theo truc Y). Day la cach chinh xac nhat, vi dua thang vao
+  // cau truc bang that thay vi doan "so nao o ben phai nhat".
+  if (weightColumnX !== null && totalRowMatches.length > 0) {
+    const anchor = totalRowMatches[totalRowMatches.length - 1]; // uu tien hang CUOI CUNG neu co nhieu
     const targetY = centerY(anchor);
-    // Dung chieu cao cua chinh chu "Tong" lam moc, nhan he so de ra do dung sai theo hang - dang
-    // tin cay hon 1 con so pixel co dinh, vi anh co the bi nen/thu nho kich thuoc khac nhau.
     const wordHeight = Math.max(anchor.bbox.y1 - anchor.bbox.y0, 14);
-    const rowTolerance = wordHeight * 1.8;
+    const rowTolerance = wordHeight * 0.7;
 
-    const candidates = words.filter((w) => isWeightNumber(w.text) && Math.abs(centerY(w) - targetY) <= rowTolerance);
-    if (candidates.length > 0) {
-      // Cot "Số kg" luon la cot ngoai cung ben PHAI trong bang - uu tien chu nam xa nhat ve ben phai.
-      candidates.sort((a, b) => b.bbox.x0 - a.bbox.x0);
-      const value = parseFloat(candidates[0].text.replace(',', '.'));
+    const rowCandidates = words.filter((w) => isWeightNumber(w.text) && Math.abs(centerY(w) - targetY) <= rowTolerance);
+    if (rowCandidates.length > 0) {
+      // Trong dung hang do, lay so co TAM DIEM X GAN NHAT voi tam cot "Số kg" - chinh la giao diem.
+      rowCandidates.sort((a, b) => Math.abs(centerX(a) - weightColumnX) - Math.abs(centerX(b) - weightColumnX));
+      const value = parseFloat(rowCandidates[0].text.replace(',', '.'));
       if (Number.isFinite(value) && value > 0 && value < 100000) return value;
     }
   }
 
-  // Phuong an cuoi: khong tim duoc dong "Tong..." (co the OCR doc sai chu do nay hoan toan) -
-  // lay so dang thap phan nam o HANG DUOI CUNG trang (Y lon nhat), vi tong luon nam o cuoi bang.
-  // Trong hang duoi cung do (co the co ca cot SL va cot Số kg cung dang thap phan), uu tien so
-  // nam ben PHAI nhat - dung vi tri cot "Số kg" trong mau phieu. Chi xet nua duoi trang de tranh
-  // bat nham so o dong dau bang.
+  // Phuong an du phong (khi khong xac dinh duoc ca 2 moc tren, vi du OCR doc sai tieu de cot
+  // hoac dong tong): lay so dang thap phan nam o HANG DUOI CUNG trang (Y lon nhat, vi tong luon
+  // o cuoi bang), uu tien so nam ben PHAI nhat theo tam diem X trong dung hang do.
   const maxY = Math.max(...words.map((w) => w.bbox.y1));
   const weightWords = words.filter((w) => isWeightNumber(w.text) && centerY(w) > maxY * 0.5);
   if (weightWords.length > 0) {
     const bottomY = Math.max(...weightWords.map((w) => centerY(w)));
-    const sameRowTolerance = Math.max(...weightWords.map((w) => w.bbox.y1 - w.bbox.y0)) * 1.5;
+    const sameRowTolerance = Math.max(...weightWords.map((w) => w.bbox.y1 - w.bbox.y0)) * 0.7;
     const bottomRow = weightWords.filter((w) => Math.abs(centerY(w) - bottomY) <= sameRowTolerance);
-    bottomRow.sort((a, b) => b.bbox.x0 - a.bbox.x0);
+    bottomRow.sort((a, b) => centerX(b) - centerX(a));
     const value = parseFloat(bottomRow[0].text.replace(',', '.'));
     if (Number.isFinite(value) && value > 0 && value < 100000) return value;
   }
