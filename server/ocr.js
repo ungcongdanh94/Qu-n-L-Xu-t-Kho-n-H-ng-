@@ -84,6 +84,48 @@ function guessOrderCode(rawText) {
 const WEIGHT_LINE_KEYWORDS = ['tong thanh tien', 'tong cong'];
 const WEIGHT_NUMBER_PATTERN = /\b\d{1,4}\.\d{1,2}\b/g;
 
+// Cach 1 (uu tien): dua vao TOA DO THUC cua tung chu tren anh, giong cach doan ten khach hang -
+// khong phu thuoc vao viec Tesseract co tach dung dong hay khong. Bang nhieu cot rong de bi
+// Tesseract tach sai dong (nhan "Tong thanh tien" va con so co the bi day sang 2 dong text khac
+// nhau du chung nam CUNG 1 HANG tren anh that) - dung Y-coordinate se dang tin cay hon nhieu
+// so voi so khop chuoi ky tu tren cung 1 dong.
+function guessTotalWeightKgFromWords(words) {
+  if (!words || words.length === 0) return null;
+
+  // Tim vi tri (truc Y) cua cum "tong" + "thanh"/"tien"/"cong" xuat hien gan nhau
+  const totalRowYs = [];
+  for (let i = 0; i < words.length; i++) {
+    const t = normalizeToken(words[i].text);
+    if (t !== 'tong') continue;
+    for (let j = i + 1; j < Math.min(i + 6, words.length); j++) {
+      const t2 = normalizeToken(words[j].text);
+      if (t2 === 'thanh' || t2 === 'tien' || t2 === 'cong') {
+        totalRowYs.push((words[i].bbox.y0 + words[i].bbox.y1) / 2);
+        break;
+      }
+    }
+  }
+  if (totalRowYs.length === 0) return null;
+  // Neu tim thay nhieu dong (vi du co ca "Tổng số lượng" o dau bang), uu tien dong CUOI CUNG -
+  // dong tong ket luon nam o gan cuoi bang, khong phai o dau.
+  const targetY = totalRowYs[totalRowYs.length - 1];
+  const rowTolerance = 22; // px - du rong de gom cac chu tren cung 1 hang du doc lech doi chut
+
+  const candidates = words.filter((w) => {
+    const text = (w.text || '').trim();
+    if (!/^\d{1,4}[.,]\d{1,2}$/.test(text)) return false;
+    const wy = (w.bbox.y0 + w.bbox.y1) / 2;
+    return Math.abs(wy - targetY) <= rowTolerance;
+  });
+  if (candidates.length === 0) return null;
+  // Cot "Số kg" luon la cot ngoai cung ben PHAI trong bang - uu tien chu nam xa nhat ve ben phai.
+  candidates.sort((a, b) => b.bbox.x0 - a.bbox.x0);
+  const value = parseFloat(candidates[0].text.replace(',', '.'));
+  return Number.isFinite(value) && value > 0 && value < 100000 ? value : null;
+}
+
+// Cach 2 (du phong): neu khong co du lieu toa do (data.words rong) hoac cach 1 khong tim ra,
+// quay lai so khop tren cung 1 dong van ban nhu truoc - van co ich cho cac truong hop don gian.
 function guessTotalWeightKg(rawText) {
   const lines = (rawText || '').split('\n');
   for (const line of lines) {
@@ -348,7 +390,13 @@ async function runOcr(imagePath) {
 
   const matchedCustomer = await findClosestCustomer(guess);
   const orderCode = guessOrderCode(rawText);
-  const totalWeightGuess = guessTotalWeightKg(rawText);
+  let totalWeightGuess = null;
+  if (data.words && data.words.length > 0) {
+    totalWeightGuess = guessTotalWeightKgFromWords(data.words);
+  }
+  if (totalWeightGuess === null) {
+    totalWeightGuess = guessTotalWeightKg(rawText);
+  }
   return {
     rawText,
     guess,
