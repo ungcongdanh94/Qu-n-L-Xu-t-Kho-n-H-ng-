@@ -45,7 +45,6 @@ CREATE TABLE IF NOT EXISTS orders (
   customer_name TEXT NOT NULL,
   order_type TEXT NOT NULL DEFAULT 'xuat_kho' CHECK(order_type IN ('xuat_kho','nhap_kho')),
   order_code TEXT,
-  total_weight_kg REAL,
   ocr_raw_text TEXT,
   ocr_guess TEXT,
   sales_user_id INTEGER NOT NULL,
@@ -152,8 +151,10 @@ if (!columnExists('orders', 'order_type')) {
 if (!columnExists('orders', 'order_code')) {
   db.exec('ALTER TABLE orders ADD COLUMN order_code TEXT');
 }
-if (!columnExists('orders', 'total_weight_kg')) {
-  db.exec('ALTER TABLE orders ADD COLUMN total_weight_kg REAL');
+// Da bo tinh nang nhan dien/luu so kg don hang - xoa luon cot du lieu cu tren cac DB da ton tai
+// (SQLite ho tro DROP COLUMN tu ban 3.35 tro len, better-sqlite3 dung ban moi nen an toan).
+if (columnExists('orders', 'total_weight_kg')) {
+  db.exec('ALTER TABLE orders DROP COLUMN total_weight_kg');
 }
 if (!columnExists('users', 'roles')) {
   db.exec("ALTER TABLE users ADD COLUMN roles TEXT NOT NULL DEFAULT '[]'");

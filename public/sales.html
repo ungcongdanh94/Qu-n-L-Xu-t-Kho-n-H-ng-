@@ -213,13 +213,6 @@
             order_type: document.getElementById('orderType').value,
             customer_name: customerName,
             order_code: orderCode,
-            // Tu dong luu so kg OCR doc duoc (neu co) - KHONG hien thi/yeu cau sales lam gi ca,
-            // theo dung yeu cau: chi Admin moi thay/sua duoc muc nay (qua nut Sua don sau nay
-            // neu OCR doc sai).
-            total_weight_kg:
-              window.__scannedOcr && window.__scannedOcr.totalWeightGuess !== null && window.__scannedOcr.totalWeightGuess !== undefined
-                ? window.__scannedOcr.totalWeightGuess
-                : '',
             note,
             ocr_raw_text: window.__scannedOcr ? window.__scannedOcr.rawText : '',
             ocr_guess: window.__scannedOcr ? window.__scannedOcr.guess : '',
@@ -339,7 +332,7 @@
           (p) => `
         <div>
           <img src="/uploads/${p.photo_path}" onclick="openImageViewer('/uploads/${p.photo_path}')" loading="lazy" />
-          <div class="label">${{ order: 'Đơn gốc', packed: 'Đã giao hàng', return: 'Hàng trả' }[p.type]}${p.warehouse_name ? ' - ' + p.warehouse_name : ''}</div>
+          <div class="label">${{ order: 'Đơn gốc', packed: 'Đã giao hàng', return: 'Hàng trả' }[p.type]}${p.warehouse_name ? ' - ' + p.warehouse_name : ''}${p.type !== 'order' ? ' · ' + formatDateTime(p.uploaded_at) : ''}</div>
         </div>`
         )
         .join('');

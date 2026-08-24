@@ -76,120 +76,6 @@ function guessOrderCode(rawText) {
   return 'BH' + digits;
 }
 
-// Doan tong so kg cua don hang, tu dong "Tong thanh tien" o cuoi bang (theo dung mau phieu cua
-// CONG THANH: dong nay co CA tong tien VA tong so kg nam canh nhau, vi du "3,530,989   48.02").
-// Dau hieu phan biet: tien luon co dau phay ngan hang nghin (khong co dau cham thap phan),
-// con so kg luon co dang so thap phan (XX.XX) - nen chi lay so dang thap phan tren dong nay.
-// CHI la goi y de dien san - sales van xac nhan/sua lai truoc khi luu, tranh sai so lieu thong ke.
-const WEIGHT_LINE_KEYWORDS = ['tong thanh tien', 'tong cong'];
-const WEIGHT_NUMBER_PATTERN = /\b\d{1,4}\.\d{1,2}\b/g;
-
-// Cach 1 (uu tien): dua vao TOA DO THUC cua tung chu tren anh, giong cach doan ten khach hang -
-// khong phu thuoc vao viec Tesseract co tach dung dong hay khong. Bang nhieu cot rong de bi
-// Tesseract tach sai dong (nhan "Tong thanh tien" va con so co the bi day sang 2 dong text khac
-// nhau du chung nam CUNG 1 HANG tren anh that) - dung Y-coordinate se dang tin cay hon nhieu
-// so voi so khop chuoi ky tu tren cung 1 dong.
-function guessTotalWeightKgFromWords(words) {
-  if (!words || words.length === 0) return null;
-
-  const isWeightNumber = (text) => /^\d{1,4}[.,]\d{1,2}$/.test((text || '').trim());
-  const centerY = (w) => (w.bbox.y0 + w.bbox.y1) / 2;
-  const centerX = (w) => (w.bbox.x0 + w.bbox.x1) / 2;
-
-  // Buoc 1: Tim tieu de cot "Số kg" - lay TAM DIEM X cua no lam moc xac dinh dung cot, thay vi
-  // doan "cot ngoai cung ben phai" (khong dang tin cay bang, vi con tuy mau phieu).
-  let weightColumnX = null;
-  for (let i = 0; i < words.length; i++) {
-    const t = normalizeToken(words[i].text);
-    if (t === 'sokg') {
-      weightColumnX = centerX(words[i]);
-      break;
-    }
-    if (t === 'so') {
-      for (let j = i + 1; j < Math.min(i + 3, words.length); j++) {
-        if (normalizeToken(words[j].text) === 'kg') {
-          weightColumnX = (centerX(words[i]) + centerX(words[j])) / 2;
-          break;
-        }
-      }
-      if (weightColumnX !== null) break;
-    }
-  }
-
-  // Buoc 2: Tim hang "Tổng cộng"/"Tổng thành tiền" - lay TAM DIEM Y lam moc xac dinh dung hang.
-  const totalRowMatches = [];
-  for (let i = 0; i < words.length; i++) {
-    const t = normalizeToken(words[i].text);
-    if (t === 'tongcong' || t === 'tongthanhtien') {
-      totalRowMatches.push(words[i]);
-      continue;
-    }
-    if (t !== 'tong') continue;
-    for (let j = i + 1; j < Math.min(i + 6, words.length); j++) {
-      const t2 = normalizeToken(words[j].text);
-      if (t2 === 'thanh' || t2 === 'tien' || t2 === 'cong') {
-        totalRowMatches.push(words[i]);
-        break;
-      }
-    }
-  }
-
-  // Buoc 3: SO GIAO giua cot va hang - lay dung con so nam o vi tri GIAO NHAU cua cot "Số kg"
-  // (theo truc X) va hang "Tổng..." (theo truc Y). Day la cach chinh xac nhat, vi dua thang vao
-  // cau truc bang that thay vi doan "so nao o ben phai nhat".
-  if (weightColumnX !== null && totalRowMatches.length > 0) {
-    const anchor = totalRowMatches[totalRowMatches.length - 1]; // uu tien hang CUOI CUNG neu co nhieu
-    const targetY = centerY(anchor);
-    const wordHeight = Math.max(anchor.bbox.y1 - anchor.bbox.y0, 14);
-    const rowTolerance = wordHeight * 0.7;
-
-    const rowCandidates = words.filter((w) => isWeightNumber(w.text) && Math.abs(centerY(w) - targetY) <= rowTolerance);
-    if (rowCandidates.length > 0) {
-      // Trong dung hang do, lay so co TAM DIEM X GAN NHAT voi tam cot "Số kg" - chinh la giao diem.
-      rowCandidates.sort((a, b) => Math.abs(centerX(a) - weightColumnX) - Math.abs(centerX(b) - weightColumnX));
-      const value = parseFloat(rowCandidates[0].text.replace(',', '.'));
-      if (Number.isFinite(value) && value > 0 && value < 100000) return value;
-    }
-  }
-
-  // Phuong an du phong (khi khong xac dinh duoc ca 2 moc tren, vi du OCR doc sai tieu de cot
-  // hoac dong tong): lay so dang thap phan nam o HANG DUOI CUNG trang (Y lon nhat, vi tong luon
-  // o cuoi bang), uu tien so nam ben PHAI nhat theo tam diem X trong dung hang do.
-  const maxY = Math.max(...words.map((w) => w.bbox.y1));
-  const weightWords = words.filter((w) => isWeightNumber(w.text) && centerY(w) > maxY * 0.5);
-  if (weightWords.length > 0) {
-    const bottomY = Math.max(...weightWords.map((w) => centerY(w)));
-    const sameRowTolerance = Math.max(...weightWords.map((w) => w.bbox.y1 - w.bbox.y0)) * 0.7;
-    const bottomRow = weightWords.filter((w) => Math.abs(centerY(w) - bottomY) <= sameRowTolerance);
-    bottomRow.sort((a, b) => centerX(b) - centerX(a));
-    const value = parseFloat(bottomRow[0].text.replace(',', '.'));
-    if (Number.isFinite(value) && value > 0 && value < 100000) return value;
-  }
-
-  return null;
-}
-
-// Cach 2 (du phong): neu khong co du lieu toa do (data.words rong) hoac cach 1 khong tim ra,
-// quay lai so khop tren cung 1 dong van ban nhu truoc - van co ich cho cac truong hop don gian.
-function guessTotalWeightKg(rawText) {
-  const lines = (rawText || '').split('\n');
-  for (const line of lines) {
-    const normalized = stripDiacritics(line).replace(/\s+/g, ' ').trim();
-    if (WEIGHT_LINE_KEYWORDS.some((kw) => normalized.includes(kw))) {
-      const matches = line.match(WEIGHT_NUMBER_PATTERN);
-      if (matches && matches.length > 0) {
-        // Neu dong co nhieu so thap phan, lay so CUOI CUNG (thuong la cot ben phai nhat = Số kg,
-        // theo dung thu tu cot trong mau phieu: ... Thành tiền | Số kg).
-        const value = parseFloat(matches[matches.length - 1]);
-        if (Number.isFinite(value) && value > 0 && value < 100000) {
-          return value;
-        }
-      }
-    }
-  }
-  return null;
-}
-
 function stripDiacritics(str) {
   return str
     .normalize('NFD')
@@ -435,19 +321,11 @@ async function runOcr(imagePath) {
 
   const matchedCustomer = await findClosestCustomer(guess);
   const orderCode = guessOrderCode(rawText);
-  let totalWeightGuess = null;
-  if (data.words && data.words.length > 0) {
-    totalWeightGuess = guessTotalWeightKgFromWords(data.words);
-  }
-  if (totalWeightGuess === null) {
-    totalWeightGuess = guessTotalWeightKg(rawText);
-  }
   return {
     rawText,
     guess,
     suggestedName: matchedCustomer || guess,
     orderCode,
-    totalWeightGuess,
   };
 }
 

@@ -17,15 +17,12 @@
   <div class="container">
     <div class="card">
       <h2>📊 Tổng quan đơn hàng</h2>
-      <div id="summary" style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap;"></div>
-      <div id="weightSummary" style="margin-bottom:14px;"></div>
+      <div id="summary" style="display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap;"></div>
 
       <div style="display:flex; gap:8px; margin-bottom:10px;">
         <button id="viewModeDay" class="btn secondary" style="margin:0; width:auto; padding:6px 14px; font-size:13px;" onclick="setViewMode('day')">📅 Xem theo ngày</button>
         <button id="viewModeMonth" class="btn secondary" style="margin:0; width:auto; padding:6px 14px; font-size:13px;" onclick="setViewMode('month')">🗓️ Xem theo tháng</button>
-        <button class="btn secondary" style="margin:0; width:auto; padding:6px 14px; font-size:13px;" onclick="startWeightBackfill()">🔄 Quét lại kg đơn cũ (từ 1/8)</button>
       </div>
-      <div id="backfillStatus" style="display:none; margin-bottom:10px;"></div>
 
       <div class="day-nav" id="dayNavRow">
         <button onclick="shiftDay(-1)">◀</button>
@@ -92,57 +89,6 @@
       loadOrders();
     }
     setViewMode('day');
-
-    let backfillPollTimer = null;
-    async function startWeightBackfill() {
-      if (!confirm('Quét lại toàn bộ đơn từ 1/8/2026 đến nay chưa có số kg? Có thể mất vài phút tuỳ số lượng đơn.')) return;
-      try {
-        const data = await apiFetch('/api/orders/backfill-weight', {
-          method: 'POST',
-          body: JSON.stringify({ from_date: '2026-08-01' }),
-        });
-        if (data.total === 0) {
-          showToast('✅ Không có đơn nào cần quét lại (đã có đủ số kg hoặc không có đơn trong khoảng này).');
-          return;
-        }
-        showToast(`🔄 Đang quét lại ${data.total} đơn, chạy trong nền...`);
-        pollBackfillStatus();
-      } catch (err) {
-        alert(err.message);
-      }
-    }
-
-    async function pollBackfillStatus() {
-      const el = document.getElementById('backfillStatus');
-      el.style.display = 'block';
-      if (backfillPollTimer) clearInterval(backfillPollTimer);
-      backfillPollTimer = setInterval(async () => {
-        try {
-          const status = await apiFetch('/api/orders/backfill-weight/status');
-          if (status.total === 0) {
-            el.style.display = 'none';
-            clearInterval(backfillPollTimer);
-            return;
-          }
-          const pct = Math.round((status.processed / status.total) * 100);
-          el.innerHTML = `<p class="hint">🔄 Đang quét: ${status.processed}/${status.total} đơn (${pct}%) - đã tìm được ${status.updated} số kg.</p>`;
-          if (!status.running) {
-            clearInterval(backfillPollTimer);
-            el.innerHTML = `<p class="hint">✅ Đã quét xong ${status.total} đơn, tìm được số kg cho ${status.updated} đơn.</p>`;
-            showToast(`✅ Quét xong! Tìm được số kg cho ${status.updated}/${status.total} đơn.`);
-            loadOrders();
-            setTimeout(() => { el.style.display = 'none'; }, 6000);
-          }
-        } catch (err) {
-          clearInterval(backfillPollTimer);
-        }
-      }, 2000);
-    }
-
-    // Neu co job dang chay san (vi du admin reload lai trang giua chung) - tiep tuc theo doi luon
-    apiFetch('/api/orders/backfill-weight/status')
-      .then((status) => { if (status.running) pollBackfillStatus(); })
-      .catch(() => {});
 
     function shiftMonth(delta) {
       const el = document.getElementById('monthFilter');
@@ -234,7 +180,6 @@
                 <span class="badge ${o.status}">${statusLabel(o.status, o.order_type)}</span>
               </div>
               ${renderWarehouseChips(o.warehouses, o.order_type)}
-              ${o.total_weight_kg !== null && o.total_weight_kg !== undefined ? `<div class="weight-chip">⚖️ ${o.total_weight_kg} kg</div>` : ''}
               <div class="meta" style="margin-top:6px;">
                 Sales: ${o.sales_username} &nbsp;·&nbsp; ${formatDateTime(o.created_at)}
               </div>
@@ -256,21 +201,6 @@
         <div class="badge da_soan" style="font-size:14px; padding:8px 14px;">Đã giao: ${counts.da_soan}</div>
         <div class="badge co_hang_tra" style="font-size:14px; padding:8px 14px;">Hàng trả: ${counts.co_hang_tra}</div>
       `;
-
-      // Tong so kg - tach rieng thanh 1 khung to, ro rang, khong lan voi cac badge trang thai nho
-      // ben tren, de "nhin vao la thay ngay" nhu yeu cau.
-      const totalWeight = orders.reduce((sum, o) => sum + (typeof o.total_weight_kg === 'number' ? o.total_weight_kg : 0), 0);
-      const ordersWithWeight = orders.filter((o) => typeof o.total_weight_kg === 'number').length;
-      document.getElementById('weightSummary').innerHTML =
-        ordersWithWeight > 0
-          ? `<div style="display:flex; align-items:center; gap:12px; background:#fef3c7; border:1px solid #f5c451; border-radius:10px; padding:14px 18px;">
-               <span style="font-size:28px;">⚖️</span>
-               <div>
-                 <div style="font-size:22px; font-weight:800; color:#92400e; line-height:1.2;">${totalWeight.toFixed(2)} kg</div>
-                 <div style="font-size:12px; color:#92400e; opacity:0.85;">Tổng số kg (${ordersWithWeight}/${orders.length} đơn có ghi kg)</div>
-               </div>
-             </div>`
-          : `<p class="hint">⚖️ Chưa có đơn nào trong danh sách này ghi được số kg.</p>`;
     }
 
     async function openOrder(id) {
@@ -283,7 +213,7 @@
           (p) => `
         <div>
           <img src="/uploads/${p.photo_path}" onclick="openImageViewer('/uploads/${p.photo_path}')" loading="lazy" />
-          <div class="label">${{ order: 'Đơn gốc', packed: 'Đã giao hàng', return: 'Hàng trả' }[p.type]}${p.warehouse_name ? ' - ' + p.warehouse_name : ''}</div>
+          <div class="label">${{ order: 'Đơn gốc', packed: 'Đã giao hàng', return: 'Hàng trả' }[p.type]}${p.warehouse_name ? ' - ' + p.warehouse_name : ''}${p.type !== 'order' ? ' · ' + formatDateTime(p.uploaded_at) : ''}</div>
         </div>`
         )
         .join('');

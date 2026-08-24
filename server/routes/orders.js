@@ -67,7 +67,7 @@ router.post(
     // QUAN TRONG: doc OCR TRUOC tren anh GOC (do phan giai cao nhat, chu nho tren phieu
     // van con ro net) - roi moi nen anh lai de tiet kiem dung luong luu tru. Neu nen truoc
     // roi moi OCR, chu nho co the bi mo di, lam giam do chinh xac nhan dien ro ret.
-    let ocrResult = { rawText: '', guess: '', suggestedName: '', orderCode: '', totalWeightGuess: null };
+    let ocrResult = { rawText: '', guess: '', suggestedName: '', orderCode: '' };
     try {
       ocrResult = await runOcr(req.file.path);
     } catch (err) {
@@ -124,19 +124,16 @@ router.post('/', requireAuth, requireRole('sales', 'leader'), async (req, res) =
   const orderType = req.body.order_type === 'nhap_kho' ? 'nhap_kho' : 'xuat_kho';
   const finalName = (req.body.customer_name || '').trim() || 'Chua xac dinh';
   const orderCode = (req.body.order_code || '').trim() || null;
-  const rawWeight = parseFloat(req.body.total_weight_kg);
-  const totalWeightKg = Number.isFinite(rawWeight) && rawWeight >= 0 ? rawWeight : null;
 
   const info = db
     .prepare(
-      `INSERT INTO orders (customer_name, order_type, order_code, total_weight_kg, ocr_raw_text, ocr_guess, sales_user_id, sales_username, warehouse_id, order_photo_path, status, note)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'cho_soan', ?)`
+      `INSERT INTO orders (customer_name, order_type, order_code, ocr_raw_text, ocr_guess, sales_user_id, sales_username, warehouse_id, order_photo_path, status, note)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'cho_soan', ?)`
     )
     .run(
       finalName,
       orderType,
       orderCode,
-      totalWeightKg,
       req.body.ocr_raw_text || null,
       req.body.ocr_guess || null,
       req.user.id,
@@ -213,7 +210,7 @@ router.patch('/:id', requireAuth, (req, res) => {
     });
   }
 
-  const { customer_name, note, order_code, order_type, warehouse_ids, total_weight_kg } = req.body || {};
+  const { customer_name, note, order_code, order_type, warehouse_ids } = req.body || {};
   const updates = [];
   const params = [];
 
@@ -225,11 +222,6 @@ router.patch('/:id', requireAuth, (req, res) => {
   if (typeof order_code === 'string') {
     updates.push('order_code = ?');
     params.push(order_code.trim() || null);
-  }
-  if (total_weight_kg !== undefined && canEditAny) {
-    const parsedWeight = parseFloat(total_weight_kg);
-    updates.push('total_weight_kg = ?');
-    params.push(Number.isFinite(parsedWeight) && parsedWeight >= 0 ? parsedWeight : null);
   }
   if (typeof note === 'string') {
     updates.push('note = ?');
@@ -486,60 +478,6 @@ router.post(
     res.json({ order: updatedOrder });
   }
 );
-
-// ============ Quet lai OCR hang loat de bo sung so kg cho don CU (chi Quan ly) ============
-// Chay NGAM trong nen (khong giu request cho xong het, vi co the mat vai phut neu nhieu don) -
-// frontend goi lien tuc GET /backfill-weight/status de xem tien do. Luu y: OCR chay tren ANH DA
-// NEN san (vi anh goc do phan giai cao khong duoc giu lai sau khi luu don), nen do chinh xac se
-// thap hon 1 chut so voi OCR luc quet lan dau tren anh goc.
-let backfillJob = { running: false, total: 0, processed: 0, updated: 0, startedAt: null, finishedAt: null };
-
-router.post('/backfill-weight', requireAuth, requireRole('leader'), (req, res) => {
-  if (backfillJob.running) {
-    return res.status(400).json({ error: 'Đang có 1 lần quét khác đang chạy, vui lòng đợi hoàn tất.' });
-  }
-  const fromDate = (req.body && req.body.from_date) || '2026-08-01';
-  const targets = db
-    .prepare(
-      `SELECT id, order_photo_path FROM orders
-       WHERE total_weight_kg IS NULL AND date(created_at) >= date(?) AND order_photo_path IS NOT NULL`
-    )
-    .all(fromDate);
-
-  backfillJob = {
-    running: true,
-    total: targets.length,
-    processed: 0,
-    updated: 0,
-    startedAt: new Date().toISOString(),
-    finishedAt: null,
-  };
-  res.json({ started: true, total: targets.length });
-
-  (async () => {
-    for (const o of targets) {
-      try {
-        const fullPath = path.join(uploadDir, o.order_photo_path);
-        if (fs.existsSync(fullPath)) {
-          const ocrResult = await runOcr(fullPath);
-          if (ocrResult.totalWeightGuess !== null && ocrResult.totalWeightGuess !== undefined) {
-            db.prepare('UPDATE orders SET total_weight_kg = ? WHERE id = ?').run(ocrResult.totalWeightGuess, o.id);
-            backfillJob.updated++;
-          }
-        }
-      } catch (err) {
-        console.error('[backfill-weight] Loi xu ly don', o.id, err.message);
-      }
-      backfillJob.processed++;
-    }
-    backfillJob.running = false;
-    backfillJob.finishedAt = new Date().toISOString();
-  })();
-});
-
-router.get('/backfill-weight/status', requireAuth, requireRole('leader'), (req, res) => {
-  res.json(backfillJob);
-});
 
 // ============ Danh sach don hang (co loc) ============
 router.get('/', requireAuth, (req, res) => {

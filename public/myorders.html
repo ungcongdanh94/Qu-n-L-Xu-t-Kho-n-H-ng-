@@ -152,7 +152,7 @@
           (p) => `
         <div>
           <img src="/uploads/${p.photo_path}" onclick="openImageViewer('/uploads/${p.photo_path}')" loading="lazy" />
-          <div class="label">${{ order: 'Đơn gốc', packed: 'Đã giao hàng', return: 'Hàng trả' }[p.type]}${p.warehouse_name ? ' - ' + p.warehouse_name : ''}</div>
+          <div class="label">${{ order: 'Đơn gốc', packed: 'Đã giao hàng', return: 'Hàng trả' }[p.type]}${p.warehouse_name ? ' - ' + p.warehouse_name : ''}${p.type !== 'order' ? ' · ' + formatDateTime(p.uploaded_at) : ''}</div>
         </div>`
         )
         .join('');

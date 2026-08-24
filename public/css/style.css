@@ -199,22 +199,6 @@ textarea { resize: vertical; min-height: 60px; }
 }
 .warehouse-chip .badge { margin-left: 2px; font-size: 10px; padding: 2px 7px; font-weight: 600; }
 
-/* So kg cua don hang - can noi bat de nhin vao la thay ngay, khong lan trong cac badge trang
-   thai nho. Mau vang/cam (khac han mau xanh cua chip kho) de de phan biet o cai nhin dau tien. */
-.weight-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  background: #fef3c7;
-  border: 1px solid #f5c451;
-  color: #92400e;
-  border-radius: 7px;
-  padding: 4px 10px;
-  font-size: 13px;
-  font-weight: 700;
-  margin-top: 6px;
-}
-
 .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 .filters select, .filters input { width: auto; flex: 1; min-width: 120px; }
 
