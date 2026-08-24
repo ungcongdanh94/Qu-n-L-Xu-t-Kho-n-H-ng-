@@ -17,7 +17,8 @@
   <div class="container">
     <div class="card">
       <h2>📊 Tổng quan đơn hàng</h2>
-      <div id="summary" style="display:flex; gap:10px; margin-bottom:14px; flex-wrap:wrap;"></div>
+      <div id="summary" style="display:flex; gap:10px; margin-bottom:10px; flex-wrap:wrap;"></div>
+      <div id="weightSummary" style="margin-bottom:14px;"></div>
 
       <div class="day-nav">
         <button onclick="shiftDay(-1)">◀</button>
@@ -132,9 +133,9 @@
               <div class="meta">
                 <span class="badge ${o.order_type}">${orderTypeLabel(o.order_type)}</span>
                 <span class="badge ${o.status}">${statusLabel(o.status, o.order_type)}</span>
-                ${o.total_weight_kg !== null && o.total_weight_kg !== undefined ? `<span class="badge" style="background:#f1f5f9; color:#334155;">⚖️ ${o.total_weight_kg} kg</span>` : ''}
               </div>
               ${renderWarehouseChips(o.warehouses, o.order_type)}
+              ${o.total_weight_kg !== null && o.total_weight_kg !== undefined ? `<div class="weight-chip">⚖️ ${o.total_weight_kg} kg</div>` : ''}
               <div class="meta" style="margin-top:6px;">
                 Sales: ${o.sales_username} &nbsp;·&nbsp; ${formatDateTime(o.created_at)}
               </div>
@@ -151,16 +152,26 @@
     function renderSummary(orders) {
       const counts = { cho_soan: 0, da_soan: 0, co_hang_tra: 0 };
       orders.forEach((o) => { if (counts[o.status] !== undefined) counts[o.status]++; });
-      // Cong don tong so kg cua danh sach dang xem (theo dung bo loc ngay/trang thai/loai don/kho
-      // hien tai) - chi cong nhung don co nhap so kg, don khong nhap thi bo qua (khong tinh la 0).
-      const totalWeight = orders.reduce((sum, o) => sum + (typeof o.total_weight_kg === 'number' ? o.total_weight_kg : 0), 0);
-      const ordersWithWeight = orders.filter((o) => typeof o.total_weight_kg === 'number').length;
       document.getElementById('summary').innerHTML = `
         <div class="badge cho_soan" style="font-size:14px; padding:8px 14px;">Chờ soạn: ${counts.cho_soan}</div>
         <div class="badge da_soan" style="font-size:14px; padding:8px 14px;">Đã giao: ${counts.da_soan}</div>
         <div class="badge co_hang_tra" style="font-size:14px; padding:8px 14px;">Hàng trả: ${counts.co_hang_tra}</div>
-        ${ordersWithWeight > 0 ? `<div class="badge" style="font-size:14px; padding:8px 14px; background:#f1f5f9; color:#334155;">⚖️ Tổng: ${totalWeight.toFixed(2)} kg (${ordersWithWeight} đơn có ghi kg)</div>` : ''}
       `;
+
+      // Tong so kg - tach rieng thanh 1 khung to, ro rang, khong lan voi cac badge trang thai nho
+      // ben tren, de "nhin vao la thay ngay" nhu yeu cau.
+      const totalWeight = orders.reduce((sum, o) => sum + (typeof o.total_weight_kg === 'number' ? o.total_weight_kg : 0), 0);
+      const ordersWithWeight = orders.filter((o) => typeof o.total_weight_kg === 'number').length;
+      document.getElementById('weightSummary').innerHTML =
+        ordersWithWeight > 0
+          ? `<div style="display:flex; align-items:center; gap:12px; background:#fef3c7; border:1px solid #f5c451; border-radius:10px; padding:14px 18px;">
+               <span style="font-size:28px;">⚖️</span>
+               <div>
+                 <div style="font-size:22px; font-weight:800; color:#92400e; line-height:1.2;">${totalWeight.toFixed(2)} kg</div>
+                 <div style="font-size:12px; color:#92400e; opacity:0.85;">Tổng số kg (${ordersWithWeight}/${orders.length} đơn có ghi kg)</div>
+               </div>
+             </div>`
+          : `<p class="hint">⚖️ Chưa có đơn nào trong danh sách này ghi được số kg.</p>`;
     }
 
     async function openOrder(id) {
