@@ -543,19 +543,26 @@ router.get('/', requireAuth, (req, res) => {
     params.push(`%${customer}%`);
   }
   if (req.query.month) {
-    // Dinh dang YYYY-MM (vi du "2026-08") - loc toan bo don trong thang do
-    sql += " AND strftime('%Y-%m', o.created_at) = ?";
-    params.push(req.query.month);
+    // Dinh dang YYYY-MM (vi du "2026-08"). QUAN TRONG: so sanh truc tiep KHOANG GIA TRI tren cot
+    // created_at (khong boc ham strftime()/date() quanh CHINH cot do) de SQLite dung duoc INDEX
+    // tren created_at - neu boc ham quanh cot, SQLite buoc phai quet toan bo bang moi lan loc,
+    // cang ve sau du lieu cang nhieu se cang cham.
+    const [y, m] = req.query.month.split('-').map(Number);
+    const startOfMonth = `${req.query.month}-01`;
+    const next = new Date(y, m, 1); // m khong tru 1 (Date thang 0-index) nen day chinh la thang ke tiep
+    const endOfMonth = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}-01`;
+    sql += ' AND o.created_at >= ? AND o.created_at < ?';
+    params.push(startOfMonth, endOfMonth);
   } else if (date) {
-    sql += ' AND date(o.created_at) = date(?)';
-    params.push(date);
+    sql += " AND o.created_at >= ? AND o.created_at < date(?, '+1 day')";
+    params.push(date, date);
   } else {
     if (from) {
-      sql += ' AND date(o.created_at) >= date(?)';
+      sql += ' AND o.created_at >= ?';
       params.push(from);
     }
     if (to) {
-      sql += ' AND date(o.created_at) <= date(?)';
+      sql += " AND o.created_at < date(?, '+1 day')";
       params.push(to);
     }
   }

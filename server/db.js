@@ -120,6 +120,7 @@ CREATE INDEX IF NOT EXISTS idx_orders_customer ON orders(customer_name);
 CREATE INDEX IF NOT EXISTS idx_orders_warehouse ON orders(warehouse_id);
 CREATE INDEX IF NOT EXISTS idx_orders_created_at ON orders(created_at);
 CREATE INDEX IF NOT EXISTS idx_orders_status_created ON orders(status, created_at);
+CREATE INDEX IF NOT EXISTS idx_orders_sales_user ON orders(sales_user_id);
 CREATE INDEX IF NOT EXISTS idx_order_photos_order ON order_photos(order_id);
 CREATE INDEX IF NOT EXISTS idx_order_warehouses_order ON order_warehouses(order_id);
 CREATE INDEX IF NOT EXISTS idx_order_warehouses_warehouse ON order_warehouses(warehouse_id);
