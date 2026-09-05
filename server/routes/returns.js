@@ -229,8 +229,11 @@ router.get('/', requireAuth, (req, res) => {
     SELECT r.*, w.name AS warehouse_name
     FROM returns r
     LEFT JOIN warehouses w ON w.id = r.warehouse_id
-    WHERE 1=1`;
-  const params = [];
+    WHERE r.created_at >= ?`;
+  // Chi hien phieu tra hang TU thang 9/2026 tro di - du lieu cu hon khong can hien nua (theo yeu
+  // cau). So sanh truc tiep tren cot created_at (khong boc ham date()/strftime() quanh cot) de
+  // van dung duoc index idx_returns_created_at, tranh quet toan bang.
+  const params = ['2026-09-01'];
 
   if (status) {
     sql += ' AND r.status = ?';
