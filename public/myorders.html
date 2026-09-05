@@ -15,6 +15,11 @@
   <div id="tabs"></div>
 
   <div class="container">
+    <div class="card" id="pendingReturnsCard" style="display:none; border: 2px solid #f5c451; background: #fffbeb;">
+      <h2 style="margin:0 0 10px;">↩️ Phiếu trả hàng cần Sales gửi ảnh phiếu <span id="pendingReturnsCount" class="badge" style="background:#fbbf24; color:#78350f;"></span></h2>
+      <div id="pendingReturnsList"></div>
+    </div>
+
     <div class="card">
       <h2 style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
         <span>📑 Đơn hàng</span>
@@ -197,8 +202,42 @@
       document.getElementById('modalOverlay').style.display = 'none';
     }
 
-    window.refreshList = loadOrders;
+    // Phieu tra hang dang cho SALES gui anh phieu tra hang - hien nhac nho ngay tren trang nay
+    // (khong gioi han theo nguoi dang, vi sales bat ky ai cung co the xu ly duoc).
+    async function loadPendingReturns() {
+      try {
+        const data = await apiFetch('/api/returns?status=cho_sales_xac_nhan');
+        const card = document.getElementById('pendingReturnsCard');
+        if (!data.returns || data.returns.length === 0) {
+          card.style.display = 'none';
+          return;
+        }
+        card.style.display = '';
+        document.getElementById('pendingReturnsCount').textContent = data.returns.length;
+        document.getElementById('pendingReturnsList').innerHTML = data.returns
+          .map(
+            (r) => `
+          <div class="order-item" onclick="window.location.href='/returns.html'">
+            <div class="info">
+              <div class="name">${r.customer_name}${r.order_code ? ` <span style="color:var(--muted); font-weight:400; font-size:12px;">(${r.order_code})</span>` : ''}</div>
+              <div class="meta">
+                ${r.warehouse_name || ''} &nbsp;·&nbsp; Lập bởi: ${r.initiated_by_username} &nbsp;·&nbsp; ${formatDateTime(r.created_at)}
+              </div>
+            </div>
+          </div>`
+          )
+          .join('');
+      } catch (err) {
+        // Khong lam gian doan trang chinh neu phan nay loi, chi bo qua
+      }
+    }
+
+    window.refreshList = function () {
+      loadOrders();
+      loadPendingReturns();
+    };
     loadOrders();
+    loadPendingReturns();
   </script>
 </body>
 </html>
